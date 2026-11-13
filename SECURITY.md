@@ -21,7 +21,7 @@ AnyStyle runs a local executable on desktop to parse citation text from a tempor
 
 # Build provenance
 
-The release workflow lints and builds locked dependencies, then requests GitHub build attestations for `main.js`, `manifest.json` and `styles.css`. Attestations are only created when that workflow runs successfully in a repository supporting GitHub attestations. Editing the workflow does not attest existing upstream releases.
+Workflow updates for locked installs, lint/build CI and attestations for `main.js`, `manifest.json` and `styles.css` are prepared locally but not yet published. The current GitHub fork does not generate attestations. Once published, the updated workflow must run successfully in a repository supporting GitHub attestations; editing a workflow does not attest existing releases.
 
 # Compatibility limits
 

@@ -7,7 +7,7 @@ Disposition of the automated findings at https://community.obsidian.md/plugins/p
 - Async failures: floating and misused promises, async lifecycle hooks, callback exceptions that left enclosing promises pending, missing awaits on dependent writes, redundant awaits and non-Error rejection values. User-facing operations report failures; background and shutdown failures are logged. PDF workers, crop image handlers and timers are released after failures.
 - Window compatibility: timer ownership, document/style selection, per-window generated styles and body classes, active-view access, notice message elements with compatibility fallbacks, and preference for the standard caret-position API.
 - Runtime correctness: iOS-incompatible lookbehind, unsafe own-property checks, mutation of shared suggestion defaults, needless expression statements, aliases, duplicated/redundant type constituents, unnecessary assertions and incomplete caret-position declarations.
-- Packaging and delivery: plugin description, direct CodeMirror dependency, replacement of `builtin-modules` with Node's built-in list, locked package-manager version, lint/build CI and release-asset attestation configuration.
+- Packaging and delivery: plugin description, direct CodeMirror dependency, replacement of `builtin-modules` with Node's built-in list and locked package-manager version. Lint/build CI and release-asset attestation configuration are prepared locally; publication of the workflow files is still pending.
 - Permissions and disclosures: explicit opt-in for automatic GitHub update checks, HTTP imports via `requestUrl`, trusted-code warnings beside template/vimrc settings, and documented vault, clipboard, network and desktop-process access.
 
 # Findings retained with reasons
@@ -20,7 +20,7 @@ Disposition of the automated findings at https://community.obsidian.md/plugins/p
 
 # External limitations
 
-Existing upstream release assets cannot acquire attestations merely through a local source edit. Future releases need a successful run of the updated workflow; no release has been published here.
+Existing upstream release assets cannot acquire attestations merely through a local source edit. The workflow changes are not yet published on GitHub. Future releases need their publication and a successful workflow run; no release has been published here.
 
 The listing's unavailable malware, vulnerability, obfuscation, network and build-verification scans describe the community service's coverage. This checkout cannot turn those scans on or certify their results. No full security audit or live Obsidian compatibility verification is claimed.
 
