@@ -112,7 +112,9 @@ export class ViewerHighlightLib extends PDFPlusLibSubmodule {
                 // If `zoomToFitRect === true`, it will be handled by `PDFViewerChild.prototype.applySubpath` as a FitR destination.
                 if (!this.settings.zoomToFitRect) {
                     window.setTimeout(() => {
-                        window.pdfjsViewer.scrollIntoView(child.rectHighlight, {
+                        const highlight = child.rectHighlight;
+                        if (!highlight) return;
+                        window.pdfjsViewer.scrollIntoView(highlight, {
                             top: - this.settings.embedMargin
                         });
                     });    

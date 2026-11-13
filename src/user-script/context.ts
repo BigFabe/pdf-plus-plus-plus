@@ -87,7 +87,8 @@ export class UserScriptContext extends PDFPlusComponent {
         return this.lib.write(obsidian.normalizePath(path), data, options?.existOk ?? false);
     }
 
-    async run(script: string) {
-        return evalInContext('const app=this.app;const api = this;' + script, this);
+    async run(script: string): Promise<unknown> {
+        const result: unknown = evalInContext('const app=this.app;const api = this;' + script, this);
+        return result;
     }
 }

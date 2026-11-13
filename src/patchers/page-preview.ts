@@ -14,13 +14,15 @@ export const patchPagePreview = (plugin: PDFPlus): boolean => {
 
     plugin.register(around(pagePreviewInstance, {
         onLinkHover(old) {
-            // Hover state is an extensible, undocumented core/plugin payload.
-            return function (hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: any): void {
+            // Core and other plugins can supply arbitrary hover state; inspect only our fields.
+            return function (this: typeof pagePreviewInstance, hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: unknown): void {
+                const hoverState = state !== null && typeof state === 'object' ? state : undefined;
                 const { path: linkpath, subpath } = parseLinktext(linktext);
                 const file = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
 
-                if ((!sourcePath || sourcePath.endsWith('.pdf')) && plugin.settings.hoverHighlightAction === 'open' && state?.isTriggeredFromBacklinkVisualizer) {
-                    lib.workspace.openMarkdownLinkFromPDF(linktext, sourcePath, false, { line: state.scroll }).catch((error) => {
+                if ((!sourcePath || sourcePath.endsWith('.pdf')) && plugin.settings.hoverHighlightAction === 'open' && hoverState && 'isTriggeredFromBacklinkVisualizer' in hoverState && hoverState.isTriggeredFromBacklinkVisualizer) {
+                    const position = 'scroll' in hoverState && typeof hoverState.scroll === 'number' ? { line: hoverState.scroll } : undefined;
+                    lib.workspace.openMarkdownLinkFromPDF(linktext, sourcePath, false, position).catch((error) => {
                         new Notice(`${plugin.manifest.name}: Failed to open the backlink.`);
                         console.error(error);
                     });

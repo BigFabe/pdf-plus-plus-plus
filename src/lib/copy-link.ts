@@ -1,6 +1,7 @@
-import { Editor, EditorRange, MarkdownFileInfo, MarkdownView, Notice, TFile } from 'obsidian';
+import { Editor, EditorRange, Events, MarkdownFileInfo, MarkdownView, Notice, TFile, WorkspaceLeaf } from 'obsidian';
 
 import { PDFPlusLibSubmodule } from './submodule';
+import { readAnnotationData } from './annotation-data';
 import { PDFPlusTemplateProcessor } from 'template';
 import { encodeLinktext, getOffsetInTextLayerNode, getTextLayerInfo, getTextLayerNode, paramsToSubpath, parsePDFSubpath, subpathToParams } from 'utils';
 import { Canvas, PDFOutlineTreeNode, PDFViewerChild, Rect } from 'typings';
@@ -60,7 +61,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         return null;
     }
 
-    getTemplateVariables(subpathParams: Record<string, any>) {
+    getTemplateVariables(subpathParams: Record<string, string | number | null | undefined>) {
         const selection = activeWindow.getSelection();
         if (!selection) return null;
         const pageEl = this.lib.getPageElFromSelection(selection);
@@ -146,7 +147,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                 .trim();
         } catch (err) {
             console.error(err);
-            new Notice(`${this.plugin.manifest.name}: Display text format is invalid. Error: ${err.message}`, 3000);
+            new Notice(`${this.plugin.manifest.name}: Display text format is invalid. Error: ${err instanceof Error ? err.message : String(err)}`, 3000);
         }
     }
 
@@ -176,9 +177,10 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         // need refactor
         if (typeof comment !== 'string') {
             const annotationId = subpathToParams(subpath).get('annotation');
-            // @ts-ignore
-            comment = (typeof annotationId === 'string' && pageView?.annotationLayer?.annotationLayer?.getAnnotation(annotationId)?.data?.contentsObj?.str);
-            comment = this.lib.toSingleLine(comment || '');
+            const contents = typeof annotationId === 'string'
+                ? readAnnotationData(pageView?.annotationLayer?.annotationLayer?.getAnnotation(annotationId)?.data)?.contents
+                : undefined;
+            comment = this.lib.toSingleLine(typeof contents === 'string' ? contents : '');
         }
 
         const processor = new PDFPlusTemplateProcessor(this.plugin, {
@@ -319,10 +321,12 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
             const pageView = child.getPage(page);
             child.getAnnotatedText(pageView, id)
                 .then(async (text) => {
-                    const annotData = pageView.annotationLayer?.annotationLayer?.getAnnotation(id)?.data ?? (await pageView.pdfPage.getAnnotations()).find((annot) => annot.id === id);
+                    const renderedData = pageView.annotationLayer?.annotationLayer?.getAnnotation(id)?.data;
+                    const annotations: unknown[] = renderedData ? [renderedData] : await pageView.pdfPage.getAnnotations();
+                    const annotData = annotations.map(readAnnotationData).find((annot) => annot?.id === id);
                     const color = annotData?.color ? `${annotData.color[0]}, ${annotData.color[1]}, ${annotData.color[2]}` : '';
                     let subpath = `#page=${page}&annotation=${id}`;
-                    if (annotData.subtype === 'Square') {
+                    if (annotData?.subtype === 'Square') {
                         const rect = annotData.rect;
                         subpath += `&rect=${rect[0]},${rect[1]},${rect[2]},${rect[3]}`;
                     }
@@ -596,9 +600,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
             // This is a workaround for the problem where the `closeHoverEditorWhenLostFocus` option
             // cannot affect hover editor leafs opened by the "Hover Editor: Open new Hover Editor" command.
             const hoverEditorAPI = this.lib.workspace.hoverEditor;
-            // TypeScript complains for some reason that I don't understand
-            // @ts-ignore
-            this.plugin.registerOneTimeEvent(this.app.workspace, 'active-leaf-change', (leaf) => {
+            this.plugin.registerOneTimeEvent<Events>(this.app.workspace, 'active-leaf-change', (leaf: WorkspaceLeaf | null) => {
                 if (leaf && hoverEditorAPI.isHoverEditorLeaf(leaf)) {
                     hoverEditorAPI.postProcessHoverEditorLeaf(leaf);
                 }
@@ -661,9 +663,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         // This is a workaround for the problem where the `closeHoverEditorWhenLostFocus` option
         // cannot affect hover editor leafs opened by the "Hover Editor: Open new Hover Editor" command.
         const hoverEditorAPI = this.lib.workspace.hoverEditor;
-        // TypeScript complains for some reason that I don't understand
-        // @ts-ignore
-        this.plugin.registerOneTimeEvent(this.app.workspace, 'active-leaf-change', (leaf) => {
+        this.plugin.registerOneTimeEvent<Events>(this.app.workspace, 'active-leaf-change', (leaf: WorkspaceLeaf | null) => {
             if (leaf && hoverEditorAPI.isHoverEditorLeaf(leaf)) {
                 hoverEditorAPI.postProcessHoverEditorLeaf(leaf);
             }
@@ -851,7 +851,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         new Notice(`${this.plugin.manifest.name}: PDF copy/paste failed. See console for details.`);
     }
 
-    watchPaste(text: string, onPaste?: () => any) {
+    watchPaste(text: string, onPaste?: () => unknown) {
         // watch for a manual paste for updating this.lastPasteFile
         this.plugin.registerOneTimeEvent(this.app.workspace, 'editor-paste', (evt: ClipboardEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo) => {
             if (info.file?.extension !== 'md') return;
@@ -882,7 +882,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         });
     }
 
-    onCopyFinish(text: string, onPaste?: () => any) {
+    onCopyFinish(text: string, onPaste?: () => unknown) {
         this.watchPaste(text, onPaste);
         // update this.lastCopiedDestArray
         this.plugin.lastCopiedDestInfo = null;

@@ -6,7 +6,7 @@ import { SidebarView } from 'pdfjs-enums';
 import { Notice } from 'obsidian';
 
 
-type OutlineCommand = (outline: PDFOutlineViewer, n?: number) => any;
+type OutlineCommand = (outline: PDFOutlineViewer, n?: number) => unknown;
 
 export class VimOutlineMode extends VimBindingsMode {
     constructor(vim: VimBindings) {

@@ -2,6 +2,7 @@ import { Component, Modifier, Platform, CachedMetadata, ReferenceCache, parseLin
 import { PDFDict, PDFName, PDFRef } from '@cantoo/pdf-lib';
 
 import { ObsidianViewer, OldTextLayerBuilder, PDFPageView, Rect, TextContentItem, TextLayerBuilder } from 'typings';
+import { isRecord } from './typescript';
 
 export * from './color';
 export * from './suggest';
@@ -56,9 +57,10 @@ export function pdfJsQuadPointsToArrayOfRects(quadPoints: Float32Array | Array<A
     for (const rectInQuodPoints of quadPoints) {
         const topRight = rectInQuodPoints[1];
         const bottomLeft = rectInQuodPoints[2];
-        let rect = [bottomLeft.x, bottomLeft.y, topRight.x, topRight.y];
-        rect = window.pdfjsLib.Util.normalizeRect(rect);
-        rects.push(rect as Rect);
+        rects.push([
+            Math.min(bottomLeft.x, topRight.x), Math.min(bottomLeft.y, topRight.y),
+            Math.max(bottomLeft.x, topRight.x), Math.max(bottomLeft.y, topRight.y),
+        ]);
     }
 
     return rects;
@@ -272,58 +274,33 @@ export function isVersionOlderThan(a: string, b: string) {
 }
 
 export function getInstallerVersion(): string | null {
-    return Platform.isDesktopApp ?
-        // @ts-ignore
-        window.electron.remote.app.getVersion() :
-        null;
-}
-
-export function getAndroidWebViewVersion() {
-    if (!Platform.isAndroidApp) {
-        return null;
-    }
-
-    if ('userAgentData' in navigator && navigator.userAgentData) {
-        const androidWebViewBrand = navigator.userAgentData.brands.find((brand) => brand.brand === 'Android WebView');
-        if (androidWebViewBrand) {
-            return androidWebViewBrand.version;
-        }
-    }
-
-    const match = navigator.userAgent.match(/Chrome\/([\d]+)/);
-    if (match) {
-        return match[1];
-    }
-
-    return null;
+    return Platform.isDesktopApp ? window.electron?.remote?.app.getVersion() ?? null : null;
 }
 
 /**
  * Get the information about the Obsidian app and the system.
  * This is the same as the "SYSTEM INFO" section in the result of the "Show debug info" command.
  */
-export async function getSystemInfo(): Promise<any> {
-    if (window.electron) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports -- Desktop-only system information; never imported on mobile.
-        const os = require('os') as typeof import('os');
+export async function getSystemInfo(): Promise<Record<string, string>> {
+    if (Platform.isDesktopApp && window.electron) {
+        const os = await import('os');
+        const version: unknown = window.electron.ipcRenderer.sendSync('version');
         return {
-            'Obsidian version': window.electron.ipcRenderer.sendSync('version'),
-            // @ts-ignore
-            'Installer version': window.electron.remote.app.getVersion(),
+            'Obsidian version': typeof version === 'string' ? version : apiVersion,
+            'Installer version': getInstallerVersion() ?? 'unknown',
             'Operating system': os.version() + ' ' + os.release(),
         };
     }
 
     const appInfo = await window.Capacitor.Plugins.App.getInfo();
     const deviceInfo = await window.Capacitor.Plugins.Device.getInfo();
-    const info: any = {
+    const info: Record<string, string> = {
         'Obsidian version': `${appInfo.version} (${appInfo.build})`,
         'API version': apiVersion,
         'Operating system': `${deviceInfo.platform} ${deviceInfo.osVersion} (${deviceInfo.manufacturer} ${deviceInfo.model})`,
     };
-    const androidWebViewVersion = getAndroidWebViewVersion();
-    if (androidWebViewVersion) {
-        info['Android WebView version'] = androidWebViewVersion;
+    if (Platform.isAndroidApp && deviceInfo.webViewVersion) {
+        info['Android WebView version'] = deviceInfo.webViewVersion;
     }
     return info;
 }
@@ -352,14 +329,13 @@ export async function getObsidianDebugInfo(app: App) {
     };
 }
 
-export function getStyleSettings(app: App) {
-    // @ts-ignore
-    const fullStyleSettings = app.plugins.plugins['obsidian-style-settings']?.settingsManager.settings;
-    const pdfPlusStyleSettings = fullStyleSettings ? Object.fromEntries(
-        Object.entries(fullStyleSettings)
-            .filter(([key]) => key.startsWith('pdf-plus@@'))
-    ) : null;
-    return pdfPlusStyleSettings;
+export function getStyleSettings(app: App): Record<string, unknown> | null {
+    const plugin = app.plugins.plugins['obsidian-style-settings'];
+    if (!plugin || !('settingsManager' in plugin) || !isRecord(plugin.settingsManager)) return null;
+    const fullStyleSettings = plugin.settingsManager.settings;
+    if (!isRecord(fullStyleSettings)) return null;
+    return Object.fromEntries(Object.entries(fullStyleSettings)
+        .filter(([key]) => key.startsWith('pdf-plus@@')));
 }
 
 export function findReferenceCache(cache: CachedMetadata, start: number, end: number): ReferenceCache | undefined {
@@ -407,7 +383,7 @@ export function parsePDFSubpath(subpath: string): { type: 'page', page: number }
     return { type: 'page', page };
 }
 
-export function paramsToSubpath(params: Record<string, any>) {
+export function paramsToSubpath(params: Record<string, string | number | boolean | null | undefined>) {
     return '#' + Object.entries(params)
         .filter(([k, v]) => k && (v || v === 0))
         .map(([k, v]) => `${k}=${v}`)
@@ -520,7 +496,7 @@ export function toSingleLine(str: string, removeWhitespaceBetweenCJChars = false
     // Korean characters should be excluded because whitespace has a meaning in Korean.
     // https://github.com/RyotaUshio/obsidian-pdf-plus/issues/173
     const cjRegexp = getCJKRegexp({ korean: false });
-    str = str.replace(/(.?)([\r\n]+)(.?)/g, (match, prev, br, next) => {
+    str = str.replace(/(.?)([\r\n]+)(.?)/g, (match: string, prev: string, br: string, next: string) => {
         if (cjRegexp.test(prev) && cjRegexp.test(next)) return prev + next;
         if (prev === '-' && next.match(/[a-zA-Z]/)) return next;
         // Replace the line break with a whitespace if the line break is followed by a non-empty character.
@@ -529,7 +505,8 @@ export function toSingleLine(str: string, removeWhitespaceBetweenCJChars = false
     if (removeWhitespaceBetweenCJChars) {
         str = str.replace(new RegExp(`(${cjRegexp.source}) (?=${cjRegexp.source})`, 'g'), '$1');
     }
-    return window.pdfjsViewer.removeNullCharacters(window.pdfjsLib.normalizeUnicode(str));
+    const normalized: unknown = window.pdfjsLib.normalizeUnicode(str);
+    return window.pdfjsViewer.removeNullCharacters(typeof normalized === 'string' ? normalized : str);
 }
 
 /**
@@ -547,7 +524,8 @@ export function registerCharacterKeymap(scope: Scope, char: string, listener: Ke
     // Setting `modifiers` to `null` is undocumented but makes this keymap work regardless of modifiers, thereby fixing the issue.
     return scope.register(null, char, (evt, ctx) => {
         if (ctx.key === char && ctx.modifiers !== null && ['', 'Shift'].includes(ctx.modifiers)) {
-            return listener(evt, ctx);
+            const result: unknown = listener(evt, ctx);
+            return result === false ? false : undefined;
         }
     });
 }
@@ -618,20 +596,21 @@ export function isSelectionForward(selection: Selection) {
         : selection.anchorNode && selection.focusNode && selection.anchorNode.compareDocumentPosition(selection.focusNode) === Node.DOCUMENT_POSITION_FOLLOWING;
 }
 
-export function repeat(func: () => any, n?: number) {
+export function repeat(func: () => unknown, n?: number) {
     n ??= 1;
     while (n--) func();
 }
 
-export function repeatable(func: () => any) {
+export function repeatable(func: () => unknown) {
     return (n?: number) => repeat(func, n);
 }
 
 // Thank you Dataview
 // https://github.com/blacksmithgu/obsidian-dataview/blob/d05d6d6d5033c5b115420ac15532e1604bda39ef/src/api/inline-api.ts#L422
-export function evalInContext(code: string, ctx?: any) {
+export function evalInContext(code: string, ctx?: unknown): unknown {
     // eslint-disable-next-line @typescript-eslint/no-implied-eval -- Trusted local Vim scripts intentionally execute JavaScript; never evaluate remote/PDF text here.
-    return (new Function(code.includes('await') ? 'return (async () => {' + code + '})()' : code)).call(ctx);
+    const evaluate = new Function(code.includes('await') ? 'return (async () => {' + code + '})()' : code) as (this: unknown) => unknown;
+    return evaluate.call(ctx);
 }
 
 /**

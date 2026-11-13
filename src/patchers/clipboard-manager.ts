@@ -20,7 +20,9 @@ export const patchClipboardManager = (plugin: PDFPlus) => {
 
     if (!clipboardManager) return false;
 
-    plugin.register(around(clipboardManager.constructor.prototype, {
+    // The live manager supplies the contract for its reflected prototype.
+    const prototype = clipboardManager.constructor.prototype as ClipboardManager;
+    plugin.register(around(prototype, {
         /**
          * Passed to CodeMirror's domEventHandlers.
          * Returned value is boolean (but only `true` counts), and according to the CodeMirror docs, it means:
@@ -45,7 +47,7 @@ export const patchClipboardManager = (plugin: PDFPlus) => {
             };
         },
         handleDrop(old) {
-            return function (this: ClipboardManager, evt: DragEvent): boolean | undefined {
+            return function (this: ClipboardManager, evt: DragEvent): boolean {
                 const draggable = app.dragManager.draggable;
 
                 if (!draggable || draggable.source !== 'pdf-plus') {
@@ -63,8 +65,10 @@ export const patchClipboardManager = (plugin: PDFPlus) => {
                 const editor = this.info.editor;
                 if (!editor) return false;
 
-                // @ts-ignore
-                const textToInsert = draggable.getText(this.getPath());
+                if (!('getText' in draggable) || typeof draggable.getText !== 'function') return false;
+                // PDF++ draggables provide getText; narrow its callable contract at the plugin boundary.
+                const getText = draggable.getText as (sourcePath: string) => unknown;
+                const textToInsert = getText.call(draggable, this.getPath());
 
                 const offset = editor.cm.posAtCoords({ x: evt.clientX, y: evt.clientY }, false);
                 const pos = editor.offsetToPos(offset);

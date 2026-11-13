@@ -130,8 +130,8 @@ abstract class PDFLinkLikePostProcessor implements HoverParent {
                     linktext,
                     sourcePath: this.sourcePath
                 });
-            } catch (error) {
-                if (error?.name === 'UnknownErrorException') {
+            } catch (error: unknown) {
+                if (error !== null && typeof error === 'object' && 'name' in error && error.name === 'UnknownErrorException') {
                     return console.warn(`${plugin.manifest.name}: The destination was not found in this document.`);
                 }
                 new Notice(`${plugin.manifest.name}: Failed to preview the PDF link.`);
@@ -231,7 +231,9 @@ export class PDFInternalLinkPostProcessor extends PDFDestinationHolderPostProces
     }
 
     getDest(): string | PDFJsDestArray {
-        return this.linkAnnotationElement.data.dest;
+        // PDF.js link annotations carry a named or explicit destination.
+        const data = this.linkAnnotationElement.data as AnnotationElement['data'] & { dest: string | PDFJsDestArray };
+        return data.dest;
     }
 
     useModifierKey() {

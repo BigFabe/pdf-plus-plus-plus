@@ -29,7 +29,9 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
 
     if (!backlinkView || !backlinkRenderer) return false;
 
-    plugin.register(around(Object.getPrototypeOf(backlinkView.constructor.prototype), {
+    // Reflection loses the instance contract; this is the base prototype of the live backlink view.
+    const viewPrototype = Object.getPrototypeOf(backlinkView.constructor.prototype) as BacklinkView;
+    plugin.register(around(viewPrototype, {
         onLoadFile(old) {
             return async function (this: BacklinkView, file: TFile) {
                 await old.call(this, file);
@@ -48,7 +50,8 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
         }
     }));
 
-    plugin.register(around(backlinkRenderer.backlinkDom.constructor.prototype, {
+    const resultPrototype = backlinkRenderer.backlinkDom.constructor.prototype as SearchResultDom;
+    plugin.register(around(resultPrototype, {
         addResult(old) {
             return function (this: SearchResultDom, file: TFile, result: FileSearchResult, content: string, showTitle: boolean): SearchResultFileDom {
                 if (this.filter) {

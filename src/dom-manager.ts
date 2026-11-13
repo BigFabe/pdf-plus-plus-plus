@@ -2,10 +2,14 @@ import { MarkdownRenderChild, RGB } from 'obsidian';
 
 import PDFPlus from 'main';
 import { ColorPalette } from 'color-palette';
-import { DEFAULT_BACKLINK_HOVER_COLOR } from 'settings';
 import { hexToRgb, isHexString, rgbStringToObject } from 'utils';
 import { PDFPlusComponent } from 'lib/component';
 
+
+function cssRgbComponents(color: string) {
+	const rgb = hexToRgb(color);
+	return rgb ? `${rgb.r}, ${rgb.g}, ${rgb.b}` : 'var(--text-highlight-bg-rgb)';
+}
 
 export class DomManager extends PDFPlusComponent {
 	styleEl: HTMLStyleElement;
@@ -14,9 +18,7 @@ export class DomManager extends PDFPlusComponent {
 	constructor(plugin: PDFPlus) {
 		super(plugin);
 		const doc = plugin.app.workspace.containerEl.ownerDocument;
-		this.styleEl = plugin.registerEl(doc.createElement('style'));
-		this.styleEl.id = 'pdf-plus-style';
-		doc.head.append(this.styleEl);
+		this.styleEl = plugin.registerEl(doc.head.createEl('style', { attr: { id: 'pdf-plus-style' } }));
 	}
 
 	update() {
@@ -53,11 +55,10 @@ export class DomManager extends PDFPlusComponent {
 
 	private registerDocument(doc: Document) {
 		if (this.documentStyles.has(doc)) return;
-		const style = doc === this.styleEl.ownerDocument ? this.styleEl : doc.createElement('style');
+		const style = doc === this.styleEl.ownerDocument ? this.styleEl : doc.head.createEl('style');
 		if (style !== this.styleEl) {
 			style.id = this.styleEl.id;
 			style.textContent = this.styleEl.textContent;
-			doc.head.append(style);
 		}
 		this.documentStyles.set(doc, style);
 		doc.body.toggleClass('pdf-plus-click-embed-to-open-link', this.settings.dblclickEmbedToOpenLink);
@@ -73,8 +74,10 @@ export class DomManager extends PDFPlusComponent {
 				`.pdf-plus-backlink-highlight-layer .pdf-plus-backlink:not(.hovered-highlight)[data-highlight-color="${name.toLowerCase()}"],`,
 				`.pdf-embed[data-highlight-color="${name.toLowerCase()}"] .textLayer .mod-focused {`,
 				`    --pdf-plus-color: ${color};`,
+				`    --pdf-plus-color-rgb: ${cssRgbComponents(color)};`,
 				`    --pdf-plus-backlink-icon-color: ${color};`,
 				`    --pdf-plus-rect-color: ${color};`,
+				`    --pdf-plus-rect-color-rgb: ${cssRgbComponents(color)};`,
 				`}`
 			].join('\n') : '';
 		}).join('\n');
@@ -86,18 +89,22 @@ export class DomManager extends PDFPlusComponent {
 		this.styleEl.textContent += [
 			`\n.pdf-plus-backlink-highlight-layer .pdf-plus-backlink:not(.hovered-highlight) {`,
 			`    --pdf-plus-color: ${defaultColor};`,
+			`    --pdf-plus-color-rgb: ${cssRgbComponents(defaultColor)};`,
 			`    --pdf-plus-backlink-icon-color: ${defaultColor};`,
 			`    --pdf-plus-rect-color: ${defaultColor};`,
+			`    --pdf-plus-rect-color-rgb: ${cssRgbComponents(defaultColor)};`,
 			`}`
 		].join('\n');
 
 		let backlinkHoverColor = settings.colors[settings.backlinkHoverColor];
-		if (!backlinkHoverColor || !isHexString(backlinkHoverColor)) backlinkHoverColor = DEFAULT_BACKLINK_HOVER_COLOR;
+		if (!backlinkHoverColor || !isHexString(backlinkHoverColor)) backlinkHoverColor = '#008000';
 		this.styleEl.textContent += [
 			`\n.pdf-plus-backlink-highlight-layer .pdf-plus-backlink.hovered-highlight {`,
 			`	--pdf-plus-color: ${backlinkHoverColor};`,
 			`	--pdf-plus-backlink-icon-color: ${backlinkHoverColor};`,
 			`   --pdf-plus-rect-color: ${backlinkHoverColor};`,
+			`   --pdf-plus-color-rgb: ${cssRgbComponents(backlinkHoverColor)};`,
+			`   --pdf-plus-rect-color-rgb: ${cssRgbComponents(backlinkHoverColor)};`,
 			`}`
 		].join('\n');
 

@@ -157,13 +157,12 @@ export class PDFBacklinkIndex extends PDFPlusComponent {
         return cache;
     }
 
-    on(name: 'update', callback: () => any, ctx?: any): EventRef;
-    on(name: string, callback: (...args: any[]) => any, ctx?: any): EventRef {
+    on(name: 'update', callback: () => void, ctx?: unknown): EventRef {
         return this.events.on(name, callback, ctx);
     }
 
-    trigger(name: string, ...args: any[]) {
-        this.events.trigger(name, ...args);
+    trigger(name: 'update') {
+        this.events.trigger(name);
     }
 }
 

@@ -7,7 +7,8 @@ import { PDFOutlineTreeNode, PDFOutlineViewer } from 'typings';
 
 
 export const patchPDFOutlineViewer = (plugin: PDFPlus, pdfOutlineViewer: PDFOutlineViewer) => {
-    plugin.register(around(pdfOutlineViewer.constructor.prototype, {
+    const prototype = pdfOutlineViewer.constructor.prototype as PDFOutlineViewer;
+    plugin.register(around(prototype, {
         onItemContextMenu(old) {
             return async function (this: PDFOutlineViewer, item: PDFOutlineTreeNode, evt: MouseEvent) {
                 try {

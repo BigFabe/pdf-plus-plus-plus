@@ -312,7 +312,7 @@ export class PDFLinkUpdater extends PDFPlusLibSubmodule {
         const newFile = await operator();
         if (!newFile) return null; // operation failed
 
-        const promises: Promise<any>[] = [];
+        const promises: Promise<string>[] = [];
         const counts = { files: 0, links: 0 };
 
         for (const [sourcePath, updates] of updateQueue) {
@@ -462,7 +462,7 @@ export class PDFLinkUpdater extends PDFPlusLibSubmodule {
             });
         } else { // properties
             const key = refCache.key;
-            await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+            await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
                 frontmatter[key] = newLink;
             });
         }

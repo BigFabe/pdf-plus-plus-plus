@@ -21,7 +21,14 @@ import { PDFBacklinkIndex } from './pdf-backlink-index';
 import { Speech } from './speech';
 import * as utils from 'utils';
 import { DummyFileManager } from './dummy-file-manager';
+import { isRecord } from './annotation-data';
 import { RenderParameters } from 'pdfjs-dist/types/src/display/api';
+
+function isHTMLElement(value: unknown): value is HTMLElement {
+    // Obsidian's cross-window instanceof also recognizes nodes in popout windows.
+    return typeof value === 'object' && value !== null
+        && Reflect.apply(Node.prototype.instanceOf, value, [HTMLElement]) === true;
+}
 
 
 type OptionalRenderParameters = Omit<RenderParameters, 'canvas' | 'canvasContext' | 'viewport' | 'transform'>
@@ -79,8 +86,8 @@ export class PDFPlusLib {
     /** 
      * @param component A component such that the callback is unregistered when the component is unloaded, or `null` if the callback should be called only once.
      */
-    registerPDFEvent<K extends keyof PDFJsEventMap>(name: K, eventBus: EventBus, component: Component | null, callback: (data: PDFJsEventMap[K]) => any) {
-        const listener = async (data: any) => {
+    registerPDFEvent<K extends keyof PDFJsEventMap>(name: K, eventBus: EventBus, component: Component | null, callback: (data: PDFJsEventMap[K]) => unknown) {
+        const listener = async (data: PDFJsEventMap[K]) => {
             try {
                 await callback(data);
             } catch (error) {
@@ -100,7 +107,7 @@ export class PDFPlusLib {
      * 
      * @param component A component such that the callback is unregistered when the component is unloaded, or `null` if the callback should be called only once.
      */
-    onPageReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => any) {
+    onPageReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => void) {
         viewer.pdfViewer?._pages
             .forEach((pageView, pageIndex) => {
                 cb(pageIndex + 1, pageView, false); // page number is 1-based
@@ -115,7 +122,7 @@ export class PDFPlusLib {
      * 
      * @param component A component such that the callback is unregistered when the component is unloaded, or `null` if the callback should be called only once.
      */
-    onTextLayerReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => any) {
+    onTextLayerReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => void) {
         viewer.pdfViewer?._pages
             .forEach((pageView, pageIndex) => {
                 if (pageView.textLayer) {
@@ -132,7 +139,7 @@ export class PDFPlusLib {
      * 
      * @param component A component such that the callback is unregistered when the component is unloaded, or `null` if the callback should be called only once.
      */
-    onAnnotationLayerReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => any) {
+    onAnnotationLayerReady(viewer: ObsidianViewer, component: Component | null, cb: (pageNumber: number, pageView: PDFPageView, newlyRendered: boolean) => void) {
         viewer.pdfViewer?._pages
             .forEach((pageView, pageIndex) => {
                 if (pageView.annotationLayer) {
@@ -373,7 +380,9 @@ export class PDFPlusLib {
         if (typeof dest === 'string') {
             const pdfJsDestArray = await doc.getDestination(dest);
             if (!pdfJsDestArray) return null;
-            const page = await doc.getPageIndex(pdfJsDestArray[0]);
+            const pageRef: unknown = pdfJsDestArray[0];
+            if (!isRecord(pageRef) || typeof pageRef.num !== 'number' || typeof pageRef.gen !== 'number') return null;
+            const page = await doc.getPageIndex({ num: pageRef.num, gen: pageRef.gen });
             return page + 1;
         }
 
@@ -459,7 +468,7 @@ export class PDFPlusLib {
         return { page, id };
     }
 
-    registerGlobalDomEvent<K extends keyof DocumentEventMap>(component: Component, type: K, callback: (this: HTMLElement, ev: DocumentEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void {
+    registerGlobalDomEvent<K extends keyof DocumentEventMap>(component: Component, type: K, callback: (this: HTMLElement, ev: DocumentEventMap[K]) => void, options?: boolean | AddEventListenerOptions): void {
         component.registerDomEvent(this.app.workspace.containerEl.ownerDocument, type, callback, options);
 
         this.app.workspace.onLayoutReady(() => {
@@ -893,15 +902,15 @@ export class PDFPlusLib {
         return view instanceof EditableFileView && view.getViewType() === 'pdf';
     }
 
-    isPDFEmbed(embed: any): embed is PDFEmbed {
-        return 'loadFile' in embed
+    isPDFEmbed(embed: unknown): embed is PDFEmbed {
+        return embed instanceof Component
+            && 'loadFile' in embed
             && 'file' in embed
             && 'containerEl' in embed
             && embed.file instanceof TFile
             && embed.file.extension === 'pdf'
-            && embed.containerEl.instanceOf(HTMLElement)
-            && embed.containerEl?.matches('.pdf-embed') // additional class: "internal-embed" for embeds in markdown views, "canvas-node-content" for embeds in canvas views
-            && embed instanceof Component
+            && isHTMLElement(embed.containerEl)
+            && embed.containerEl.matches('.pdf-embed') // additional class: "internal-embed" for embeds in markdown views, "canvas-node-content" for embeds in canvas views
             && !(embed instanceof PDFCroppedEmbed);
     }
 
@@ -1054,7 +1063,7 @@ export class PDFPlusLib {
         return isVersionNewerThan(currentVersion, version);
     }
 
-    onDocumentReady(pdfViewer: ObsidianViewer, callback: (doc: PDFDocumentProxy) => any) {
+    onDocumentReady(pdfViewer: ObsidianViewer, callback: (doc: PDFDocumentProxy) => unknown) {
         if (pdfViewer.pdfLoadingTask) {
             pdfViewer.pdfLoadingTask.promise.then((doc) => callback(doc)).catch((error) => {
                 console.error(`${this.plugin.manifest.name}: Failed to process the loaded PDF document.`, error);

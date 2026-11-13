@@ -1,5 +1,6 @@
 import { ButtonComponent, HoverPopover, HoverParent, Platform, FileSystemAdapter, Notice, ExtraButtonComponent, Events } from 'obsidian';
 import { PDFDocumentProxy } from 'pdfjs-dist';
+import { isRecord } from 'lib/annotation-data';
 
 import PDFPlus from 'main';
 import { PDFPlusComponent } from 'lib/component';
@@ -8,7 +9,7 @@ import { PDFViewerChild, PDFJsDestArray, TextContentItem } from 'typings';
 
 
 export type AnystyleJson = Partial<{
-    author: { family: string, given: string }[],
+    author: { family?: string, given?: string }[],
     title: string[],
     date: string[],
     year: string, // Not present in the original anystyle output
@@ -18,6 +19,25 @@ export type AnystyleJson = Partial<{
     type: string,
 }>;
 
+
+function isAnystyleJson(value: unknown): value is AnystyleJson {
+    if (!isRecord(value)) return false;
+    for (const key of ['title', 'date', 'pages', 'volume', 'container-title']) {
+        const field = value[key];
+        if (field !== undefined && (!Array.isArray(field) || !field.every((item: unknown) => typeof item === 'string'))) return false;
+    }
+    if (value.author !== undefined && (!Array.isArray(value.author) || !value.author.every((author: unknown) =>
+        isRecord(author) && (author.family === undefined || typeof author.family === 'string')
+            && (author.given === undefined || typeof author.given === 'string')
+    ))) return false;
+    return (value.year === undefined || typeof value.year === 'string')
+        && (value.type === undefined || typeof value.type === 'string');
+}
+
+type BibliographyEventMap = {
+    extracted: [destId: string, bibText: string];
+    parsed: [destId: string, parsedBib: AnystyleJson];
+};
 
 export class BibliographyManager extends PDFPlusComponent {
     static readonly HOVER_LINK_SOURCE_ID = 'pdf-plus-citation-link';
@@ -156,8 +176,7 @@ export class BibliographyManager extends PDFPlusComponent {
             });
 
             // Desktop-only Node API. Execute the user-configured binary directly, never through a shell.
-            // eslint-disable-next-line @typescript-eslint/no-require-imports -- AnyStyle uses a guarded desktop-only process, without a shell.
-            const { spawn } = require('child_process') as typeof import('child_process');
+            const { spawn } = await import('child_process');
 
             return new Promise<AnystyleJson[] | null>((resolve, reject) => {
                 const anystyleProcess = spawn(anystylePath, ['parse', anystyleInputFullPath], { shell: false });
@@ -194,9 +213,9 @@ export class BibliographyManager extends PDFPlusComponent {
                     if (code !== 0) return reject(new Error(`AnyStyle exited with code ${code}.`));
 
                     try {
-                        const results = JSON.parse(resultJson);
+                        const results: unknown = JSON.parse(resultJson);
 
-                        if (Array.isArray(results)) {
+                        if (Array.isArray(results) && results.every(isAnystyleJson)) {
                             // Add 'year' entry to each result
                             for (const result of results) {
                                 for (const date of result.date ?? []) {
@@ -222,9 +241,7 @@ export class BibliographyManager extends PDFPlusComponent {
     }
 
 
-    on(name: 'extracted', callback: (destId: string, bibText: string) => any, ctx?: any): ReturnType<Events['on']>;
-    on(name: 'parsed', callback: (destId: string, parsedBib: string) => any, ctx?: any): ReturnType<Events['on']>;
-    on(name: string, callback: (...args: any[]) => any, ctx?: any) {
+    on<K extends keyof BibliographyEventMap>(name: K, callback: (...args: BibliographyEventMap[K]) => void, ctx?: unknown) {
         return this.events.on(name, callback, ctx);
     }
 }
@@ -234,7 +251,7 @@ class BibliographyTextExtractor {
     plugin: PDFPlus;
     doc: PDFDocumentProxy;
     pageRefToTextContentItemsPromise: Record<string, Promise<TextContentItem[]> | undefined>;
-    onExtractedCallback?: (destId: string, bibText: string) => any;
+    onExtractedCallback?: (destId: string, bibText: string) => void;
 
     constructor(plugin: PDFPlus, doc: PDFDocumentProxy) {
         this.plugin = plugin;
@@ -449,8 +466,8 @@ export class BibliographyDom extends PDFPlusComponent {
     }
 
     registerRenderOn(eventName: 'parsed' | 'extracted') {
-        // @ts-ignore
-        const eventRef = this.bib.on(eventName, (destId) => {
+        const eventRef = this.bib.on(eventName, (...args) => {
+            const [destId] = args;
             if (destId === this.destId) {
                 this.render();
                 this.bib.events.offref(eventRef);

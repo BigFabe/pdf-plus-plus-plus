@@ -22,7 +22,7 @@ abstract class NameOrNumberTree<Key extends string | number, TreeNode extends Na
         return this.root.get(key);
     }
 
-    iterLeaves(callback: (node: TreeNode) => any) {
+    iterLeaves(callback: (node: TreeNode) => void) {
         this.root.iterLeaves(callback);
     }
 
@@ -30,7 +30,7 @@ abstract class NameOrNumberTree<Key extends string | number, TreeNode extends Na
         return this.root.getLeaves();
     }
 
-    iter(callbacks: { enter?: (node: TreeNode) => any, leave?: (node: TreeNode) => any }) {
+    iter(callbacks: { enter?: (node: TreeNode) => void, leave?: (node: TreeNode) => void }) {
         this.root.iter(callbacks);
     }
 
@@ -196,7 +196,7 @@ abstract class NameOrNumberTreeNode<Key extends string | number> {
     }
 
     /** Iterate over leaf nodes (and the root node if it is the only node in the tree). */
-    iterLeaves(callback: (node: NameOrNumberTreeNode<Key>) => any) {
+    iterLeaves(callback: (node: NameOrNumberTreeNode<Key>) => void) {
         const stack: NameOrNumberTreeNode<Key>[] = [this];
         while (stack.length) {
             const node = stack.shift()!;
@@ -255,7 +255,7 @@ abstract class NameOrNumberTreeNode<Key extends string | number> {
         // No need to update "Limits".
     }
 
-    iter(callbacks: { enter?: (node: NameOrNumberTreeNode<Key>) => any, leave?: (node: NameOrNumberTreeNode<Key>) => any }) {
+    iter(callbacks: { enter?: (node: NameOrNumberTreeNode<Key>) => void, leave?: (node: NameOrNumberTreeNode<Key>) => void }) {
         callbacks.enter?.(this);
         this.kids?.forEach((kid) => kid.iter(callbacks));
         callbacks.leave?.(this);

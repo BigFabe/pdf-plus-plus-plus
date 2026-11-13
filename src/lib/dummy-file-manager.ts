@@ -73,9 +73,11 @@ export class DummyFileManager extends PDFPlusLibSubmodule {
         if (!matchModifiers(evt, this.settings.modifierToDropExternalPDFToCreateDummy)) return;
         if (!evt.dataTransfer) return;
 
-        const uris = this.getUrisFromDataTransfer(evt.dataTransfer);
+        try {
+            const uris = this.getUrisFromDataTransfer(evt.dataTransfer);
+            if (!uris.length) return;
 
-        if (uris.length) {
+            // Claim only a supported PDF drop, before the first asynchronous operation.
             evt.preventDefault();
             const folderPath = this.getFolderPathForDummyFiles(info.file);
             const dummyFiles = await this.createDummyFilesInFolder(folderPath, uris);
@@ -90,6 +92,9 @@ export class DummyFileManager extends PDFPlusLibSubmodule {
                 }
                 editor.replaceSelection(text);
             });
+        } catch (error: unknown) {
+            console.error(`${this.plugin.manifest.name}: Failed to create dummy PDF files on drop.`, error);
+            new Notice(`${this.plugin.manifest.name}: Could not create dummy PDF files. See console for details.`);
         }
     }
 

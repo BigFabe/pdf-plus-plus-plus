@@ -1,6 +1,5 @@
 import { Component, MarkdownRenderer, Notice, TFile, debounce, setIcon, setTooltip, Keymap, Menu, Platform, requireApiVersion, apiVersion } from 'obsidian';
 import { around } from 'monkey-around';
-import { PDFDocumentProxy } from 'pdfjs-dist';
 
 import PDFPlus from 'main';
 import { PDFAnnotationDeleteModal, PDFAnnotationEditModal } from 'modals';
@@ -12,10 +11,25 @@ import { PDFViewerBacklinkVisualizer } from 'backlink-visualizer';
 import { PDFPlusToolbar } from 'toolbar';
 import { BibliographyManager } from 'bib';
 import { camelCaseToKebabCase, getCharactersWithBoundingBoxesInPDFCoords, getTextLayerInfo, hookInternalLinkMouseEventHandlers, isEmbed, isModifierName, isNonEmbedLike, selectDoubleClickedWord, selectTrippleClickedTextLayerNode, registerPDFLineSelection, showChildElOnParentElHover } from 'utils';
-import { AnnotationElement, PDFOutlineViewer, PDFViewerComponent, PDFViewerChild, PDFSearchSettings, Rect, PDFAnnotationHighlight, PDFTextHighlight, PDFRectHighlight, ObsidianViewer, PDFPageView } from 'typings';
+import { PDFOutlineViewer, PDFViewerComponent, PDFViewerChild, PDFSearchSettings, Rect, PDFAnnotationHighlight, PDFTextHighlight, PDFRectHighlight, ObsidianViewer, PDFPageView } from 'typings';
 import { SidebarView, SpreadMode } from 'pdfjs-enums';
 import { VimBindings } from 'vim/vim';
-import { PDFPlusSettings } from 'settings';
+
+// Private PDF.js bridge members not yet declared by the shared API typings.
+type PDFJSViewerBridge = typeof window.pdfjsViewer & {
+    AppOptions: { get(name: string): unknown };
+    scrollIntoView(element: HTMLElement, spot?: { top?: number; left?: number }, scrollMatches?: boolean): void;
+};
+
+// Describe the prototype both before and after installing our async wrappers:
+// the core hook may return void, while the installed wrapper returns a promise.
+type PatchedPDFViewerComponent = Omit<PDFViewerComponent, 'onload'> & {
+    onload(): void | Promise<void>;
+};
+type PatchedPDFViewerChild = Omit<PDFViewerChild, 'onContextMenu'> & {
+    onContextMenu(evt: MouseEvent): void | Promise<void>;
+    onThumbnailContextMenu(evt: MouseEvent): void;
+};
 
 
 export const patchPDFInternals = async (plugin: PDFPlus, pdfViewerComponent: PDFViewerComponent): Promise<boolean> => {
@@ -96,7 +110,8 @@ const reloadPDFViewerComponent = async (viewer: PDFViewerComponent, file: TFile 
 };
 
 const patchPDFViewerComponent = (plugin: PDFPlus, pdfViewerComponent: PDFViewerComponent) => {
-    plugin.register(around(pdfViewerComponent.constructor.prototype, {
+    const prototype = pdfViewerComponent.constructor.prototype as PatchedPDFViewerComponent;
+    plugin.register(around(prototype, {
         loadFile(old) {
             return async function (this: PDFViewerComponent, file: TFile, subpath?: string) {
                 const ret = await old.call(this, file, subpath);
@@ -147,10 +162,12 @@ const patchPDFViewerComponent = (plugin: PDFPlus, pdfViewerComponent: PDFViewerC
 const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
     const { app, lib } = plugin;
 
-    // Private core method signatures vary by Obsidian version; forwarded arguments stay explicitly any.
-    plugin.register(around(child.constructor.prototype, {
+    // The prototype implements the live child's methods, including the private thumbnail hook.
+    const prototype = child.constructor.prototype as PatchedPDFViewerChild;
+    const pdfjsViewer = window.pdfjsViewer as PDFJSViewerBridge;
+    plugin.register(around(prototype, {
         load(old) {
-            return async function (this: PDFViewerChild, ...args: any[]) {
+            return async function (this: PDFViewerChild, ...args: Parameters<PDFViewerChild['load']>) {
                 this.hoverPopover = null;
                 this.isFileExternal = false;
                 this.externalFileUrl = null;
@@ -446,8 +463,9 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                                 annot.container.hide();
                             }
 
+                            const contents = annot.data.contentsObj as { str?: string } | undefined;
                             if (!Platform.isPhone // Without this, tapping on an annotation on mobile opens two annotation popups (which is a "Modal" instance with ""pdf-annotation-modal" class added to its containerEl)
-                                && plugin.settings.showAnnotationPopupOnHover && annot.data.contentsObj?.str) {
+                                && plugin.settings.showAnnotationPopupOnHover && contents?.str) {
                                 showChildElOnParentElHover({
                                     parentEl: annot.container,
                                     createChildEl: () => {
@@ -815,7 +833,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                 }
 
                 if (textDivFirst) {
-                    window.pdfjsViewer.scrollIntoView(textDivFirst, {
+                    pdfjsViewer.scrollIntoView(textDivFirst, {
                         top: - plugin.settings.embedMargin
                     }, true);
                 }
@@ -856,7 +874,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
 
                 if (el) {
                     window.setTimeout(() => {
-                        window.pdfjsViewer.scrollIntoView(el, {
+                        pdfjsViewer.scrollIntoView(el, {
                             top: - plugin.settings.embedMargin
                         }, true);
                     });
@@ -888,7 +906,8 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
             };
         },
         renderAnnotationPopup(old) {
-            return function (this: PDFViewerChild, annotationElement: AnnotationElement, ...args: any[]) {
+            return function (this: PDFViewerChild, ...args: Parameters<PDFViewerChild['renderAnnotationPopup']>) {
+                const [annotationElement] = args;
                 // This is a fix for a bug of Obsidian, which causes the following error when clicking on links in PDFs:
                 // 
                 // > Uncaught TypeError: Cannot read properties of undefined (reading 'str')
@@ -898,7 +917,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                     return;
                 }
 
-                const ret = old.call(this, annotationElement, ...args);
+                const ret = old.call(this, ...args);
 
                 plugin.lastAnnotationPopupChild = this;
                 const { page, id } = lib.getAnnotationInfoFromAnnotationElement(annotationElement);
@@ -1032,13 +1051,13 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
             };
         },
         destroyAnnotationPopup(old) {
-            return function () {
+            return function (this: PDFViewerChild) {
                 plugin.lastAnnotationPopupChild = null;
                 return old.call(this);
             };
         },
         onContextMenu(old) {
-            return async function (evt: MouseEvent): Promise<void> {
+            return async function (this: PDFViewerChild, evt: MouseEvent): Promise<void> {
                 if (Platform.isPhone) return;
                 if (Platform.isTablet && !plugin.settings.showContextMenuOnTablet) return;
 
@@ -1151,29 +1170,29 @@ const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
     // `Object.getPrototypeOf(pdfViewer) === window.pdfjsViewer.PDFViewerApplication`.
     //
     // See the docstring of the `ObsidianViewer` interface for more details.
-    const prototype = Object.getPrototypeOf(pdfViewer);
-
-    // The private open/load signatures are version-dependent; keep their payloads/extra arguments explicit any.
+    const prototype = Object.getPrototypeOf(pdfViewer) as ObsidianViewer;
     plugin.register(around(prototype, {
         open(old) {
-            return async function (this: ObsidianViewer, args: any) {
+            return async function (this: ObsidianViewer, ...args: Parameters<ObsidianViewer['open']>) {
+                const options = args[0] as { url?: string };
                 if (this.pdfPlusRedirect) {
                     const { from, to } = this.pdfPlusRedirect;
-                    const url = args.url;
+                    const url = options.url;
                     if (typeof url === 'string'
                         && url.startsWith(from) // on desktop, Vault.getResourcePath() returns a path with a query string like "?1629350400000"
                     ) {
-                        args.url = to;
+                        options.url = to;
                     }
                 }
 
                 delete this.pdfPlusRedirect;
 
-                return await old.call(this, args);
+                return await old.call(this, ...args);
             };
         },
         load(old) {
-            return function (this: ObsidianViewer, doc: PDFDocumentProxy, ...args: any[]) {
+            return function (this: ObsidianViewer, ...args: Parameters<ObsidianViewer['load']>) {
+                const [doc] = args;
                 const callbacks = this.pdfPlusCallbacksOnDocumentLoaded;
                 if (callbacks) {
                     for (const callback of callbacks) {
@@ -1182,20 +1201,20 @@ const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
                 }
                 delete this.pdfPlusCallbacksOnDocumentLoaded;
 
-                return old.call(this, doc, ...args);
+                return old.call(this, ...args);
             };
         }
     }));
 };
 
 const patchAppOptions = (plugin: PDFPlus) => {
-    // AppOptions is a private PDF.js/Obsidian bridge with undocumented forwarded arguments.
-    plugin.register(around(window.pdfjsViewer.AppOptions, {
+    const pdfjsViewer = window.pdfjsViewer as PDFJSViewerBridge;
+    plugin.register(around(pdfjsViewer.AppOptions, {
         get(old) {
-            return function (...args: any[]) {
+            return function (this: PDFJSViewerBridge['AppOptions'], ...args: Parameters<PDFJSViewerBridge['AppOptions']['get']>) {
                 const name = args[0];
-                if (['defaultZoomValue', 'scrollModeOnLoad', 'spreadModeOnLoad'].includes(name)) {
-                    return plugin.settings[name as keyof PDFPlusSettings];
+                if (name === 'defaultZoomValue' || name === 'scrollModeOnLoad' || name === 'spreadModeOnLoad') {
+                    return plugin.settings[name];
                 }
                 return old.apply(this, args);
             };

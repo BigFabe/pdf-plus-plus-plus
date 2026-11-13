@@ -53,13 +53,12 @@ export function getEventCoords(evt: MouseEvent | TouchEvent) {
         : { x: evt.touches[0].clientX, y: evt.touches[0].clientY };
 }
 
-function instanceofInWindow(obj: any, win: Window, className: string): boolean {
+function instanceofInWindow(obj: unknown, win: Window, className: 'Node' | 'Element' | 'HTMLElement'): boolean {
     // See:
     // - https://obsidian.md/blog/how-to-update-plugins-to-support-pop-out-windows/
     // - https://forum.obsidian.md/t/why-file-in-clipboardevent-is-not-an-instanceof-file-for-notes-opened-in-new-window/76648/3
-    // @ts-ignore
-    const constructor: new () => any = win[className];
-    return obj instanceof constructor;
+    const constructor: unknown = Reflect.get(win, className);
+    return typeof constructor === 'function' && obj instanceof constructor;
 }
 
 /**
@@ -93,7 +92,7 @@ export function isTargetHTMLElement(evt: UIEvent, target: EventTarget | null): t
 }
 
 /** Generalizes Obsidian's onHoverLink to arbitrary callback functions. */
-export function onModKeyPress(evt: MouseEvent | TouchEvent | KeyboardEvent, targetEl: HTMLElement, callback: () => any) {
+export function onModKeyPress(evt: MouseEvent | TouchEvent | KeyboardEvent, targetEl: HTMLElement, callback: () => unknown) {
     if (Keymap.isModifier(evt, 'Mod')) {
         callback();
         return;
@@ -137,7 +136,7 @@ export function onModKeyPress(evt: MouseEvent | TouchEvent | KeyboardEvent, targ
 export function showChildElOnParentElHover(config: {
     parentEl: HTMLElement,
     createChildEl: () => HTMLElement | null,
-    removeChildEl: (childEl: HTMLElement) => any,
+    removeChildEl: (childEl: HTMLElement) => unknown,
     component?: Component,
     timeout?: number,
 }) {

@@ -1,7 +1,17 @@
 import { PDFPlusModal } from 'modals';
 import { normalizePath, Notice, Platform, Setting } from 'obsidian';
 import { FuzzyFolderSuggest, getModifierNameInPlatform } from 'utils';
+import type { Dialog } from 'electron';
 
+
+function hasFileDialog(value: unknown): value is { remote: { dialog: Pick<Dialog, 'showOpenDialogSync'> } } {
+    if (typeof value !== 'object' || value === null || !('remote' in value)) return false;
+    const remote = value.remote;
+    if (typeof remote !== 'object' || remote === null || !('dialog' in remote)) return false;
+    const dialog = remote.dialog;
+    return typeof dialog === 'object' && dialog !== null
+        && 'showOpenDialogSync' in dialog && typeof dialog.showOpenDialogSync === 'function';
+}
 
 export class DummyFileModal extends PDFPlusModal {
     static LOCAL_STORAGE_KEY = 'last-used-dummy-file-source';
@@ -127,8 +137,10 @@ export class DummyFileModal extends PDFPlusModal {
                     .setButtonText('Browse')
                     .setCta()
                     .onClick(() => {
-                        // @ts-ignore
-                        const paths: string[] | undefined = window.electron?.remote.dialog.showOpenDialogSync({
+                        if (!Platform.isDesktopApp) return;
+                        const electron = this.containerEl.win.electron;
+                        if (!hasFileDialog(electron)) return;
+                        const paths = electron.remote.dialog.showOpenDialogSync({
                             properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
                             filters: [
                                 { name: 'PDF files', extensions: ['pdf'] }

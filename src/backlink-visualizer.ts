@@ -2,6 +2,7 @@ import { HoverParent, HoverPopover, Keymap, Notice, TFile, setIcon } from 'obsid
 
 import PDFPlus from 'main';
 import { PDFPlusComponent } from 'lib/component';
+import { readAnnotationData } from 'lib/annotation-data';
 import { PDFBacklinkCache, PDFBacklinkIndex, PDFPageBacklinkIndex } from 'lib/pdf-backlink-index';
 import { PDFPageView, PDFViewerChild, Rect } from 'typings';
 import { MultiValuedMap, getTextLayerInfo, isCanvas, isEmbed, isHoverPopover, isMouseEventExternal, isNonEmbedLike } from 'utils';
@@ -37,7 +38,7 @@ export class BacklinkDomManager extends PDFPlusComponent {
 
     private pagewiseCacheToDomsMap = new Map<number, BidirectionalMultiValuedMap<PDFBacklinkCache, HTMLElement>>;
     private pagewiseStatus = new Map<number, { onPageReady: boolean, onTextLayerReady: boolean, onAnnotationLayerReady: boolean }>;
-    private pagewiseOnClearDomCallbacksMap = new MultiValuedMap<number, () => any>();
+    private pagewiseOnClearDomCallbacksMap = new MultiValuedMap<number, () => void>();
 
     constructor(visualizer: PDFViewerBacklinkVisualizer) {
         super(visualizer.plugin);
@@ -208,17 +209,19 @@ export class BacklinkDomManager extends PDFPlusComponent {
             const { r, g, b } = color.rgb;
             el.setCssProps({
                 '--pdf-plus-color': `rgb(${r}, ${g}, ${b})`,
+                '--pdf-plus-color-rgb': `${r}, ${g}, ${b}`,
+                '--pdf-plus-rect-color-rgb': `${r}, ${g}, ${b}`,
                 '--pdf-plus-backlink-icon-color': `rgb(${r}, ${g}, ${b})`,
                 '--pdf-plus-rect-color': `rgb(${r}, ${g}, ${b})`,
             });
         }
     }
 
-    onClearDomInPage(pageNumber: number, callback: () => any) {
+    onClearDomInPage(pageNumber: number, callback: () => void) {
         this.pagewiseOnClearDomCallbacksMap.addValue(pageNumber, callback);
     }
 
-    registerDomEventForCache<K extends keyof HTMLElementEventMap>(cache: PDFBacklinkCache, el: HTMLElement, type: K, callback: (this: HTMLElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions) {
+    registerDomEventForCache<K extends keyof HTMLElementEventMap>(cache: PDFBacklinkCache, el: HTMLElement, type: K, callback: (this: HTMLElement, ev: HTMLElementEventMap[K]) => void, options?: boolean | AddEventListenerOptions) {
         this.registerDomEvent(el, type, callback, options);
         if (cache.page && cache.annotation) {
             this.onClearDomInPage(cache.page, () => {
@@ -483,8 +486,11 @@ export class PDFViewerBacklinkVisualizer extends PDFBacklinkVisualizer implement
             if (iconEl) cacheToDoms.addValue(cache, iconEl);
             if (rectEl) cacheToDoms.addValue(cache, rectEl);
 
-            const [r, g, b] = annot.data.color;
-            cache.setColor({ rgb: { r, g, b } });
+            const color = readAnnotationData(annot.data)?.color;
+            if (color) {
+                const [r, g, b] = color;
+                cache.setColor({ rgb: { r, g, b } });
+            }
         }
     }
 
@@ -546,12 +552,11 @@ export class PDFViewerBacklinkVisualizer extends PDFBacklinkVisualizer implement
     }
 
     showIcon(x: number, y: number, pageView: PDFPageView, side: 'left' | 'right' = 'right') {
-        // @ts-ignore
-        const iconSize = Math.min(pageView.viewport.rawDims.pageWidth, pageView.viewport.rawDims.pageWidth) * this.settings.backlinkIconSize / 2000;
+        const [pageX, , pageRight] = pageView.viewport.viewBox;
+        const iconSize = Math.abs(pageRight - pageX) * this.settings.backlinkIconSize / 2000;
         const rectRight: Rect = [x, y - iconSize, x + iconSize, y];
         const rectLeft: Rect = [x - iconSize, y - iconSize, x, y];
-        // @ts-ignore
-        const rect = side === 'left' && rectLeft[0] >= (pageView.viewport.rawDims.pageX ?? 0) ? rectLeft : rectRight;
+        const rect = side === 'left' && rectLeft[0] >= pageX ? rectLeft : rectRight;
         const iconEl = this.lib.highlight.viewer.placeRectInPage(rect, pageView);
         iconEl.addClass('pdf-plus-backlink-icon');
         setIcon(iconEl, 'links-coming-in');

@@ -5,25 +5,49 @@ import PDFPlus from 'main';
 import { PDFPlusLib } from 'lib';
 
 
-export class TemplateProcessor {
-    constructor(public plugin: PDFPlus, public variables: Record<string, any>) { }
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
 
-    setVariable(name: string, value: any) {
+interface DataviewAPI {
+    pages(): unknown;
+    array(value: unknown): unknown;
+}
+
+function isDataviewAPI(value: unknown): value is DataviewAPI {
+    return isRecord(value) && typeof value.pages === 'function' && typeof value.array === 'function';
+}
+
+function isIterable(value: unknown): value is Iterable<unknown> {
+    return typeof value === 'object' && value !== null
+        && Symbol.iterator in value && typeof value[Symbol.iterator] === 'function';
+}
+
+function hasPathIncludes(value: unknown): value is { includes(path: string): boolean } {
+    return isRecord(value) && typeof value.includes === 'function';
+}
+
+export class TemplateProcessor {
+    constructor(public plugin: PDFPlus, public variables: Record<string, unknown>) { }
+
+    setVariable(name: string, value: unknown) {
         this.variables[name] = value;
     }
 
-    evalPart(expr: string) {
+    evalPart(expr: string): unknown {
         // User-configured templates intentionally support JavaScript and Obsidian APIs.
+        // The generated function accepts the supplied variables; its result is untrusted until displayed.
         // eslint-disable-next-line @typescript-eslint/no-implied-eval -- Trusted local templates are an explicitly documented scripting feature, not a sandbox.
-        const evaluated = new Function(...Object.keys(this.variables), `return ${expr};`)(...Object.values(this.variables));
+        const evaluate = new Function(...Object.keys(this.variables), `return ${expr};`) as (...values: unknown[]) => unknown;
+        const evaluated = evaluate(...Object.values(this.variables));
         if (evaluated === undefined) {
             throw Error(`The expression "${expr}" cannot be evaluated.`);
         }
         return evaluated;
     }
 
-    evalTemplate(template: string) {
-        return template.replace(/{{(.*?)}}/g, (match, expr) => this.evalPart(expr));
+    evalTemplate(template: string): string {
+        return template.replace(/{{(.*?)}}/g, (match: string, expr: string) => String(this.evalPart(expr)));
     }
 }
 
@@ -37,7 +61,7 @@ export class PDFPlusTemplateProcessor extends TemplateProcessor {
         pageLabel: string,
         pageCount: number,
         text: string,
-        [key: string]: any,
+        [key: string]: unknown,
     }) {
         const { app } = plugin;
 
@@ -59,35 +83,37 @@ export class PDFPlusTemplateProcessor extends TemplateProcessor {
         this.lib = plugin.lib;
 
         const md = this.findMarkdownFileAssociatedToPDF(variables.file);
-        const properties = (md && app.metadataCache.getFileCache(md)?.frontmatter) ?? {};
+        const properties: unknown = (md && app.metadataCache.getFileCache(md)?.frontmatter) ?? {};
         this.setVariable('md', md);
         this.setVariable('properties', properties);
 
         const linkedFile = this.findLinkedFile(variables.file);
-        const linkedFileProperties = (linkedFile && app.metadataCache.getFileCache(linkedFile)?.frontmatter) ?? {};
+        const linkedFileProperties: unknown = (linkedFile && app.metadataCache.getFileCache(linkedFile)?.frontmatter) ?? {};
         this.setVariable('linkedFile', linkedFile);
         this.setVariable('linkedFileProperties', linkedFileProperties);
 
-        // @ts-ignore
-        const dv = app.plugins.plugins.dataview?.api;
-        // @ts-ignore
-        // const tp = app.plugins.plugins['templater-obsidian']?.templater.current_functions_object;
-        // @ts-ignore
-        const quickAddApi = app.plugins.plugins.quickadd?.api;
+        const dv: unknown = app.plugins.plugins.dataview?.api;
+        const quickAddApi: unknown = app.plugins.plugins.quickadd?.api;
         if (dv) this.setVariable('dv', dv);
-        // if (tp) this.setVariable('tp', tp);
         if (quickAddApi) this.setVariable('quickAddApi', quickAddApi);
     }
 
     findMarkdownFileAssociatedToPDF(pdf: TFile) {
         const app = this.plugin.app;
-        let proxyMDs: TFile[] = [];
+        const proxyMDs: TFile[] = [];
 
-        // @ts-ignore
-        const dv = app.plugins.plugins.dataview?.api;
-        if (dv) {
-            const proxyMDPages: any[] = dv.pages().where((page: any) => dv.array(page[this.plugin.settings.proxyMDProperty] ?? []).path.includes(pdf.path));
-            proxyMDs = proxyMDPages.map((page) => app.vault.getAbstractFileByPath(page.file.path)).filter((file): file is TFile => file instanceof TFile);
+        const dv: unknown = app.plugins.plugins.dataview?.api;
+        if (isDataviewAPI(dv)) {
+            const pages = dv.pages();
+            if (!isIterable(pages)) throw Error('Dataview returned an invalid page collection.');
+            for (const page of pages) {
+                if (!isRecord(page)) continue;
+                const links = dv.array(page[this.plugin.settings.proxyMDProperty] ?? []);
+                if (!isRecord(links) || !hasPathIncludes(links.path) || !links.path.includes(pdf.path)) continue;
+                if (!isRecord(page.file) || typeof page.file.path !== 'string') continue;
+                const file = app.vault.getAbstractFileByPath(page.file.path);
+                if (file instanceof TFile) proxyMDs.push(file);
+            }
         } else {
             const backlinks = app.metadataCache.getBacklinksForFile(pdf);
             for (const sourcePath of backlinks.keys()) {
