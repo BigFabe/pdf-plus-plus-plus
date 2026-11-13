@@ -118,8 +118,14 @@ const patchPDFViewerComponent = (plugin: PDFPlus, pdfViewerComponent: PDFViewerC
 
                 this.then((child) => {
                     try {
-                        if (!this.visualizer || this.visualizer.file !== file) {
-                            this.visualizer?.unload();
+                        const previous = this.visualizer;
+                        if (!previous || previous.file !== file || previous.child !== child || previous.plugin !== plugin) {
+                            // Reloading keeps the component's fields, but replaces its child and plugin.
+                            // Never reuse a visualizer attached to the unloaded PDF viewer.
+                            if (previous) {
+                                this.removeChild(previous);
+                                previous.plugin.removeChild(previous);
+                            }
                             this.visualizer = this.addChild(PDFViewerBacklinkVisualizer.create(plugin, file, child));
                         }
                     } catch (error) {
