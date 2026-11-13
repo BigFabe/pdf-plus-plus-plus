@@ -1,4 +1,4 @@
-import { Command, MarkdownView, Notice, TFile, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
+import { Command, MarkdownView, Notice, TFile, View, WorkspaceLeaf, normalizePath, setIcon } from 'obsidian';
 
 import { PDFPlusLibSubmodule } from './submodule';
 import { PDFComposerModal, PDFCreateModal, PDFPageDeleteModal, PDFPageLabelEditModal, PDFOutlineTitleModal, DummyFileModal } from 'modals';
@@ -168,11 +168,17 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
             }, {
                 id: 'create-new-note',
                 name: 'Create new note for auto-focus or auto-paste',
-                callback: () => this.createNewNote()
+                callback: () => this.createNewNote().catch((error) => {
+                    console.error(error);
+                    new Notice(`${this.plugin.manifest.name}: Failed to create or open the note.`);
+                })
             }, {
                 id: 'copy-debug-info',
                 name: 'Copy debug info',
-                callback: () => this.copyDebugInfo()
+                callback: () => this.copyDebugInfo().catch((error) => {
+                    console.error(error);
+                    new Notice(`${this.plugin.manifest.name}: Failed to copy debug info.`);
+                })
             }, {
                 id: 'load-debug-info',
                 name: 'Load debug info',
@@ -205,7 +211,9 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                         return false;
                     }
                     if (!checking) {
-                        DataviewInlineFieldsModal.open(this.plugin);
+                        DataviewInlineFieldsModal.open(this.plugin).catch((error) => {
+                            console.error(`${this.plugin.manifest.name}: Failed to open the Dataview modal.`, error);
+                        });
                     }
                     return true;
                 }
@@ -239,7 +247,7 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                     activePDFLeaf = this.lib.workspace.getActivePDFView()?.leaf ?? null;
                     return original(checking);
                 }
-                if (activePDFLeaf && activePDFLeaf !== this.app.workspace.activeLeaf) {
+                if (activePDFLeaf && activePDFLeaf !== this.app.workspace.getActiveViewOfType(View)?.leaf) {
                     this.app.workspace.setActiveLeaf(activePDFLeaf, { focus: true });
                     activePDFLeaf = null;
                 }
@@ -364,6 +372,7 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
     copyLinkToPageView(checking: boolean) {
         const view = this.lib.getPDFView(true);
         if (!view || !view.file) return false;
+        const file = view.file;
 
         const state = view.getState();
         if (typeof state.left !== 'number' || typeof state.top !== 'number') return false;
@@ -381,11 +390,14 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                 destArray = [state.page - 1, 'XYZ', state.left, state.top, state.zoom ?? 0];
             }
             const display = view.viewer.child?.getPageLinkAlias(state.page);
-            const link = this.lib.generateMarkdownLink(view.file, '', subpath, display).slice(1);
-            navigator.clipboard.writeText(link);
-            new Notice(`${this.plugin.manifest.name}: Link copied to clipboard`);
-
-            this.plugin.lastCopiedDestInfo = { file: view.file, destArray };
+            const link = this.lib.generateMarkdownLink(file, '', subpath, display).slice(1);
+            navigator.clipboard.writeText(link).then(() => {
+                new Notice(`${this.plugin.manifest.name}: Link copied to clipboard`);
+                this.plugin.lastCopiedDestInfo = { file, destArray };
+            }).catch((error) => {
+                console.error(error);
+                new Notice(`${this.plugin.manifest.name}: Failed to copy the link.`);
+            });
         }
 
         return true;
@@ -458,7 +470,8 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         const sidebar = this.lib.getObsidianViewer(true)?.pdfSidebar;
         if (!sidebar) return false;
         if (!checking) {
-            sidebar.isOpen ? sidebar.close() : sidebar.open();
+            if (sidebar.isOpen) sidebar.close();
+            else sidebar.open();
         }
         return true;
     }
@@ -478,7 +491,8 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         if (!pdfViewer.isEmbed || (el && el.contains(el.doc.activeElement))) {
             if (pdfViewer) {
                 if (!checking) {
-                    zoomIn ? pdfViewer.zoomIn() : pdfViewer.zoomOut();
+                    if (zoomIn) pdfViewer.zoomIn();
+                    else pdfViewer.zoomOut();
                 }
                 return true;
             }
@@ -562,11 +576,15 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
     }
 
     toggleAutoFocus() {
-        this.plugin.toggleAutoFocus();
+        this.plugin.toggleAutoFocus().catch((error) => {
+            console.error(`${this.plugin.manifest.name}: Failed to toggle auto-focus.`, error);
+        });
     }
 
     toggleAutoPaste() {
-        this.plugin.toggleAutoPaste();
+        this.plugin.toggleAutoPaste().catch((error) => {
+            console.error(`${this.plugin.manifest.name}: Failed to toggle auto-paste.`, error);
+        });
     }
 
     addPage(checking: boolean) {
@@ -576,7 +594,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         const file = child.file;
         if (!file) return false;
 
-        if (!checking) this.lib.composer.addPage(file);
+        if (!checking) this.lib.composer.addPage(file).catch((error) => {
+            console.error(error);
+            new Notice(`${this.plugin.manifest.name}: Failed to add the page.`);
+        });
 
         return true;
     }
@@ -611,7 +632,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         )
             .ask()
             .then((answer) => {
-                this.lib.composer.insertPage(file, page, basePage, answer);
+                this.lib.composer.insertPage(file, page, basePage, answer).catch((error) => {
+                    console.error(error);
+                    new Notice(`${this.plugin.manifest.name}: Failed to insert the page.`);
+                });
             });
     }
 
@@ -642,7 +666,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                 )
                     .ask()
                     .then((keepLabels) => {
-                        this.lib.composer.removePage(file, page, keepLabels);
+                        this.lib.composer.removePage(file, page, keepLabels).catch((error) => {
+                            console.error(error);
+                            new Notice(`${this.plugin.manifest.name}: Failed to delete the page.`);
+                        });
                     });
             });
     }
@@ -686,6 +713,9 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                             await leaf.openFile(file);
                             await this.lib.workspace.revealLeaf(leaf);
                         }
+                    }).catch((error) => {
+                        console.error(error);
+                        new Notice(`${this.plugin.manifest.name}: Failed to extract the page.`);
                     });
             });
     }
@@ -729,6 +759,9 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                             await leaf.openFile(file);
                             await this.lib.workspace.revealLeaf(leaf);
                         }
+                    }).catch((error) => {
+                        console.error(error);
+                        new Notice(`${this.plugin.manifest.name}: Failed to divide the PDF.`);
                     });
             });
     }
@@ -745,9 +778,14 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         new PDFCreateModal(this.plugin)
             .askOptions()
             .then(async (doc) => {
-                const file = await this.app.vault.createBinary(path, await doc.save());
-                const leaf = this.app.workspace.getLeaf('tab'); // TODO: make this configurable
-                await leaf.openFile(file);
+                try {
+                    const file = await this.app.vault.createBinary(path, await doc.save());
+                    const leaf = this.app.workspace.getLeaf('tab'); // TODO: make this configurable
+                    await leaf.openFile(file);
+                } catch (error) {
+                    console.error(error);
+                    new Notice(`${this.plugin.manifest.name}: Failed to create the PDF.`);
+                }
             });
     }
 
@@ -794,14 +832,14 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                         if (!item.isRoot()) {
                             let subpath: string | null = null;
                             const dest = item.getExplicitDestination();
-                            if (dest) subpath = await this.lib.destArrayToSubpath(dest);
+                            if (dest) subpath = this.lib.destArrayToSubpath(dest);
 
                             const pageNumber = subpath ? parsePDFSubpath(subpath)?.page : undefined;
 
                             // item.title should be non-null for non-root items by the PDF spec
                             const evaluated = subpath && pageNumber !== undefined
-                                ? this.lib.copyLink.getTextToCopy(child, copyFormat, displayTextFormat, file, pageNumber, subpath, item.title!, '', '')
-                                : item.title!;
+                                ? this.lib.copyLink.getTextToCopy(child, copyFormat, displayTextFormat, file, pageNumber, subpath, item.title, '', '')
+                                : item.title;
 
                             if (type === 'list') {
                                 text += `${indent.repeat(item.depth - 1)}- ${evaluated}\n`;
@@ -812,9 +850,12 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                     }
                 });
 
-                navigator.clipboard.writeText(text);
+                await navigator.clipboard.writeText(text);
                 new Notice(`${this.plugin.manifest.name}: Outline copied to clipboard.`);
-            })();
+            })().catch((error) => {
+                console.error(error);
+                new Notice(`${this.plugin.manifest.name}: Failed to copy the outline.`);
+            });
         }
 
         return true;
@@ -836,18 +877,23 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
             new PDFOutlineTitleModal(this.plugin, 'Add to outline')
                 .ask()
                 .then(async ({ title }) => {
-                    const outlines = await PDFOutlines.fromFile(file, this.plugin);
-                    const doc = outlines.doc;
+                    try {
+                        const outlines = await PDFOutlines.fromFile(file, this.plugin);
+                        const doc = outlines.doc;
 
-                    outlines
-                        .ensureRoot()
-                        .createChild(title, destArray)
-                        .updateCountForAllAncestors();
-                    outlines
-                        .ensureRoot()
-                        .sortChildren();
+                        outlines
+                            .ensureRoot()
+                            .createChild(title, destArray)
+                            .updateCountForAllAncestors();
+                        await outlines
+                            .ensureRoot()
+                            .sortChildren();
 
-                    await this.app.vault.modifyBinary(file, await doc.save());
+                        await this.app.vault.modifyBinary(file, await doc.save());
+                    } catch (error) {
+                        console.error(error);
+                        new Notice(`${this.plugin.manifest.name}: Failed to add the outline item.`);
+                    }
                 });
         }
 
@@ -911,11 +957,16 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
 
         // In the case of hover editor, we have to wait until the metadata is updated for the newly created file
         // because we need to resolve a link in `onLinkHover`.
-        const eventRef = this.app.metadataCache.on('resolve', async (resolvedFile) => {
+        const eventRef = this.app.metadataCache.on('resolve', (resolvedFile) => {
             if (resolvedFile === file) {
                 this.app.metadataCache.offref(eventRef);
                 // I don't understand why, but without setTimeout (or with a shorter timeout like 50 ms), the file is not opened.
-                setTimeout(() => openFile(), 100);
+                window.setTimeout(() => {
+                    openFile().catch((error) => {
+                        console.error(error);
+                        new Notice(`${this.plugin.manifest.name}: Failed to open the new note.`);
+                    });
+                }, 100);
             }
         });
     }
@@ -964,7 +1015,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                 } else {
                     new Notice(`${this.plugin.manifest.name}: No highlighted text found.`);
                 }
-            })();
+            })().catch((error) => {
+                console.error(error);
+                new Notice(`${this.plugin.manifest.name}: Failed to extract annotations.`);
+            });
         }
 
         return true;
@@ -1022,14 +1076,16 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                     this.plugin.settings = settings;
                     const tab = this.app.setting.pluginTabs.find((tab) => tab.id === this.plugin.manifest.id);
                     if (tab) {
-                        await (tab as PDFPlusSettingTab).hide();
+                        (tab as PDFPlusSettingTab).hide();
                     }
 
                 } catch (err) {
                     console.error(err);
                     new Notice(`${this.plugin.manifest.name}: Debug info not found in clipboard.`);
                 }
-            })();
+            })().catch((error) => {
+                console.error(`${this.plugin.manifest.name}: Failed to load debug info.`, error);
+            });
         }
 
         return true;
@@ -1039,7 +1095,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         const child = this.lib.getPDFViewerChild(true);
         if (!child || !child.isFileExternal || !child.palette) return false;
 
-        if (!checking) child.palette.importFile();
+        if (!checking) child.palette.importFile().catch((error) => {
+            console.error(error);
+            new Notice(`${this.plugin.manifest.name}: Failed to import the PDF.`);
+        });
 
         return true;
     }
@@ -1053,7 +1112,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
             (async () => {
                 const url = (await this.app.vault.read(file)).trim();
                 window.open(url, '_blank');
-            })();
+            })().catch((error) => {
+                console.error(error);
+                new Notice(`${this.plugin.manifest.name}: Failed to open the external PDF.`);
+            });
         }
 
         return true;
@@ -1072,7 +1134,10 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         const selection = doc.getSelection();
         if (!selection || !selection.focusNode || selection.isCollapsed) return false;
 
-        if (!checking) showContextMenuAtSelection(this.plugin, child, selection);
+        if (!checking) showContextMenuAtSelection(this.plugin, child, selection).catch((error) => {
+            console.error(error);
+            new Notice(`${this.plugin.manifest.name}: Failed to open the context menu.`);
+        });
 
         return true;
     }

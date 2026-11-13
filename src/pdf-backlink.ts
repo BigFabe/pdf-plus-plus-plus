@@ -1,4 +1,4 @@
-import { Component, TFile, SectionCache, Reference } from 'obsidian';
+import { Component, Notice, TFile, SectionCache, Reference } from 'obsidian';
 
 import PDFPlus from 'main';
 import { MutationObservingChild, getSubpathWithoutHash, isMouseEventExternal, isTargetHTMLElement } from 'utils';
@@ -95,7 +95,11 @@ export class BacklinkPanePDFManager extends PDFPlusComponent {
 
     updatePageTracker() {
         this.navButtonEl!.toggleClass('is-active', this.isTrackingPage);
-        this.isTrackingPage ? this.pageTracker.load() : this.pageTracker.unload();
+        if (this.isTrackingPage) {
+            this.pageTracker.load();
+        } else {
+            this.pageTracker.unload();
+        }
     }
 
     findBacklinkItemEl(cache: PDFBacklinkCache): HTMLElement | null {
@@ -225,7 +229,14 @@ export class BacklinkPanePDFPageTracker extends PDFPlusComponent {
         );
     }
 
-    async onload() {
+    onload() {
+        this.loadPageTracker().catch((error) => {
+            new Notice(`${this.plugin.manifest.name}: Failed to initialize backlink page tracking.`);
+            console.error(error);
+        });
+    }
+
+    private async loadPageTracker() {
         this.renderer.backlinkDom.filter = undefined;
 
         const leaf = this.lib.workspace.getExistingLeafForPDFFile(this.file);
@@ -235,19 +246,25 @@ export class BacklinkPanePDFPageTracker extends PDFPlusComponent {
 
             if (this.lib.isPDFView(view)) {
                 view.viewer.then((child) => {
-                    this.renderer.backlinkDom.filter = (file, linkCache) => {
-                        return (child.pdfViewer && child.pdfViewer.pdfViewer)
-                            ? this.filter(child.pdfViewer.pdfViewer.currentPageNumber, linkCache)
-                            : true;
-                    };
-                    this.updateBacklinkDom();
-
-                    this.lib.registerPDFEvent('pagechanging', child.pdfViewer.eventBus, this, (data) => {
-                        const page = typeof data.pageNumber === 'number' ? (data.pageNumber as number) : child.pdfViewer.pdfViewer?.currentPageNumber;
-                        if (page) this.renderer.backlinkDom.filter = (file, linkCache) => this.filter(page, linkCache);
-
+                    // This is a readiness callback, not a Promise continuation.
+                    try {
+                        this.renderer.backlinkDom.filter = (file, linkCache) => {
+                            return (child.pdfViewer && child.pdfViewer.pdfViewer)
+                                ? this.filter(child.pdfViewer.pdfViewer.currentPageNumber, linkCache)
+                                : true;
+                        };
                         this.updateBacklinkDom();
-                    });
+
+                        this.lib.registerPDFEvent('pagechanging', child.pdfViewer.eventBus, this, (data) => {
+                            const page = typeof data.pageNumber === 'number' ? data.pageNumber : child.pdfViewer.pdfViewer?.currentPageNumber;
+                            if (page) this.renderer.backlinkDom.filter = (file, linkCache) => this.filter(page, linkCache);
+
+                            this.updateBacklinkDom();
+                        });
+                    } catch (error) {
+                        new Notice(`${this.plugin.manifest.name}: Failed to initialize backlink page tracking.`);
+                        console.error(error);
+                    }
                 });
             }
         }

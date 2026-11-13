@@ -35,7 +35,11 @@ export class BibliographyManager extends PDFPlusComponent {
         this.destIdToParsedBib = new Map();
         this.events = new Events();
         this.initialized = false;
-        this.init();
+        this.init().catch((error) => {
+            this.initialized = true;
+            new Notice(`${this.plugin.manifest.name}: Failed to initialize the bibliography.`);
+            console.error(error);
+        });
     }
 
     isEnabled() {
@@ -58,15 +62,19 @@ export class BibliographyManager extends PDFPlusComponent {
     }
 
     private async extractBibText() {
-        return new Promise<void>((resolve) => {
+        return new Promise<void>((resolve, reject) => {
             this.lib.onDocumentReady(this.child.pdfViewer, (doc) => {
-                new BibliographyTextExtractor(this.plugin, doc)
-                    .onExtracted((destId, bibText) => {
-                        this.destIdToBibText.set(destId, bibText);
-                        this.events.trigger('extracted', destId, bibText);
-                    })
-                    .extract()
-                    .then(resolve);
+                try {
+                    new BibliographyTextExtractor(this.plugin, doc)
+                        .onExtracted((destId, bibText) => {
+                            this.destIdToBibText.set(destId, bibText);
+                            this.events.trigger('extracted', destId, bibText);
+                        })
+                        .extract()
+                        .then(resolve, reject);
+                } catch (error) {
+                    reject(error instanceof Error ? error : new Error(String(error)));
+                }
             });
         });
     }
@@ -140,13 +148,19 @@ export class BibliographyManager extends PDFPlusComponent {
             const anystyleInputFullPath = app.vault.adapter.getFullPath(anystyleInputPath);
             await app.vault.adapter.write(anystyleInputPath, text);
             // Clean up the file when this PDF viewer is unloaded
-            this.register(() => app.vault.adapter.remove(anystyleInputPath));
+            this.register(() => {
+                app.vault.adapter.remove(anystyleInputPath).catch((error) => {
+                    new Notice(`${plugin.manifest.name}: Failed to remove the AnyStyle input file.`);
+                    console.error(error);
+                });
+            });
 
-            // eslint-disable-next-line @typescript-eslint/no-require-imports 
+            // Desktop-only Node API. Execute the user-configured binary directly, never through a shell.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports -- AnyStyle uses a guarded desktop-only process, without a shell.
             const { spawn } = require('child_process') as typeof import('child_process');
 
-            return new Promise<any>((resolve) => {
-                const anystyleProcess = spawn(anystylePath, ['parse', anystyleInputFullPath]);
+            return new Promise<AnystyleJson[] | null>((resolve, reject) => {
+                const anystyleProcess = spawn(anystylePath, ['parse', anystyleInputFullPath], { shell: false });
                 let resultJson = '';
                 anystyleProcess.stdout.on('data', (resultBuffer: Buffer | null) => {
                     if (resultBuffer) {
@@ -155,44 +169,51 @@ export class BibliographyManager extends PDFPlusComponent {
                     }
                     resolve(null);
                 });
-                anystyleProcess.on('error', (err: Error & { code: string }) => {
+                anystyleProcess.on('error', (err: NodeJS.ErrnoException) => {
                     if ('code' in err && err.code === 'ENOENT') {
                         const msg = `${plugin.manifest.name}: AnyStyle not found at the path "${anystylePath}".`;
                         if (plugin.settings.anystylePath) {
                             const notice = new Notice(msg, 8000);
-                            notice.noticeEl.appendText(' Click ');
-                            notice.noticeEl.createEl('a', { text: 'here' }, (anchorEl) => {
+                            // messageEl was added after the minimum supported Obsidian 1.5.8.
+                            const messageEl = notice.messageEl ?? notice.noticeEl;
+                            messageEl.appendText(' Click ');
+                            messageEl.createEl('a', { text: 'here' }, (anchorEl) => {
                                 anchorEl.addEventListener('click', () => {
                                     plugin.openSettingTab().scrollTo('anystylePath');
                                 });
                             });
-                            notice.noticeEl.appendText(' to update the path.');
+                            messageEl.appendText(' to update the path.');
                             console.error(msg);
                         }
                         else console.warn(msg);
                         return resolve(null);
                     }
+                    reject(err);
                 });
                 anystyleProcess.on('close', (code) => {
-                    if (code) return resolve(null);
+                    if (code !== 0) return reject(new Error(`AnyStyle exited with code ${code}.`));
 
-                    const results = JSON.parse(resultJson);
+                    try {
+                        const results = JSON.parse(resultJson);
 
-                    if (Array.isArray(results)) {
-                        // Add 'year' entry to each result
-                        for (const result of results) {
-                            for (const date of result.date ?? []) {
-                                const yearMatch = date.match(/\d{4}/);
-                                if (yearMatch) {
-                                    result.year = yearMatch[0];
-                                    break;
+                        if (Array.isArray(results)) {
+                            // Add 'year' entry to each result
+                            for (const result of results) {
+                                for (const date of result.date ?? []) {
+                                    const yearMatch = date.match(/\d{4}/);
+                                    if (yearMatch) {
+                                        result.year = yearMatch[0];
+                                        break;
+                                    }
                                 }
                             }
+                            return resolve(results);
                         }
-                        resolve(results);
-                    }
 
-                    resolve(null);
+                        resolve(null);
+                    } catch (error) {
+                        reject(error instanceof Error ? error : new Error(String(error)));
+                    }
                 });
             });
         }
@@ -377,11 +398,11 @@ export class BibliographyDom extends PDFPlusComponent {
         return false;
     }
 
-    async onload() {
-        await this.render();
+    onload() {
+        this.render();
     }
 
-    async render() {
+    render() {
         this.containerEl.empty();
         let done = false;
 

@@ -63,10 +63,13 @@ export const registerOutlineDrag = async (plugin: PDFPlus, pdfOutlineViewer: PDF
                             }
 
                             destItem.appendChild(itemToMove);
-                            destItem.sortChildren();
+                            await destItem.sortChildren();
                             const buffer = await outlines.doc.save();
                             await app.vault.modifyBinary(file, buffer);
-                        })();
+                        })().catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to move the outline item.`);
+                        });
                     }
 
                     return {
@@ -105,10 +108,13 @@ export const registerOutlineDrag = async (plugin: PDFPlus, pdfOutlineViewer: PDF
 
                     const root = outlines.ensureRoot();
                     root.appendChild(itemToMove);
-                    root.sortChildren();
+                    await root.sortChildren();
                     const buffer = await outlines.doc.save();
                     await app.vault.modifyBinary(file, buffer);
-                })();
+                })().catch((error) => {
+                    console.error(error);
+                    new Notice(`${plugin.manifest.name}: Failed to move the outline item.`);
+                });
             }
 
             return {
@@ -179,5 +185,7 @@ export const registerAnnotationPopupDrag = (plugin: PDFPlus, popupEl: HTMLElemen
                     }
                 };
             });
+        }).catch((error) => {
+            console.error(`${plugin.manifest.name}: Failed to register annotation dragging.`, error);
         });
 };

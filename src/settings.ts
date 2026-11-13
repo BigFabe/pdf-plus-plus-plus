@@ -307,6 +307,7 @@ export interface PDFPlusSettings {
 	vimHintArgs: string;
 	PATH: string;
 	autoCheckForUpdates: boolean;
+	updateCheckConsent: boolean;
 	fixObsidianTextSelectionBug: boolean;
 }
 
@@ -593,13 +594,14 @@ export const DEFAULT_SETTINGS: PDFPlusSettings = {
 	vimHintChars: 'hjklasdfgyuiopqwertnmzxcvb',
 	vimHintArgs: 'all',
 	PATH: '',
-	autoCheckForUpdates: true,
+	autoCheckForUpdates: false,
+	updateCheckConsent: false,
 	fixObsidianTextSelectionBug: true,
 };
 
 
 export function isPDFPlusSettingsKey(key: string): key is keyof PDFPlusSettings {
-	return DEFAULT_SETTINGS.hasOwnProperty(key);
+	return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key);
 }
 
 
@@ -633,6 +635,17 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.contentEl = this.containerEl.createDiv('content');
 	}
 
+	private reportError = (error: unknown) => {
+		console.error(`${this.plugin.manifest.name}: Settings operation failed`, error);
+		new Notice(`${this.plugin.manifest.name}: ${error instanceof Error ? error.message : String(error)}`);
+	};
+
+	private handleAsync<Args extends unknown[]>(callback: (...args: Args) => Promise<unknown>) {
+		return (...args: Args): void => {
+			callback(...args).catch(this.reportError);
+		};
+	}
+
 	addSetting(settingName?: keyof PDFPlusSettings) {
 		const item = new Setting(this.contentEl);
 		if (settingName) {
@@ -643,7 +656,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					.addItem((item) => {
 						item.setTitle('Restore default value of this setting')
 							.setIcon('lucide-undo-2')
-							.onClick(async () => {
+							.onClick(this.handleAsync(async () => {
 								// @ts-ignore
 								this.plugin.settings[settingName] = this.plugin.getDefaultSettings()[settingName];
 								await this.plugin.saveSettings();
@@ -651,13 +664,13 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								this.redisplay();
 
 								new Notice(`${this.plugin.manifest.name}: Default setting restored. Note that some options require a restart to take effect.`, 6000);
-							});
+							}));
 					})
 					.addItem((item) => {
 						item.setTitle('Copy link to this setting')
 							.setIcon('lucide-link')
 							.onClick(() => {
-								navigator.clipboard.writeText(`obsidian://pdf-plus?setting=${settingName}`);
+								navigator.clipboard.writeText(`obsidian://pdf-plus?setting=${settingName}`).catch(this.reportError);
 							});
 					})
 					.showAtMouseEvent(evt);
@@ -693,7 +706,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					item.setTitle('Copy link to this heading')
 						.setIcon('lucide-link')
 						.onClick(() => {
-							navigator.clipboard.writeText(`obsidian://pdf-plus?setting=heading:${id}`);
+							navigator.clipboard.writeText(`obsidian://pdf-plus?setting=heading:${id}`).catch(this.reportError);
 						});
 				})
 				.showAtMouseEvent(evt);
@@ -739,7 +752,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	updateHeaderElClassOnScroll(evt?: MouseEvent) {
-		const win = evt?.win ?? activeWindow;
+		const win = this.containerEl.ownerDocument.defaultView ?? window;
 		const timer = win.setInterval(() => this.updateHeaderElClass(), 50);
 		win.setTimeout(() => win.clearInterval(timer), 1500);
 	}
@@ -773,7 +786,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 	getVisibilityToggler(setting: Setting, condition: () => boolean) {
 		const toggleVisibility = () => {
-			condition() ? setting.settingEl.show() : setting.settingEl.hide();
+			setting.settingEl.toggle(condition());
 		};
 		toggleVisibility();
 		return toggleVisibility;
@@ -796,17 +809,17 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 							text.inputEl.size = Math.max(text.inputEl.size, text.inputEl.placeholder.length);
 						}
 					})
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-					});
+					}));
 				if (onBlurOrEnter) {
 					this.component.registerDomEvent(text.inputEl, 'blur', () => {
-						onBlurOrEnter(setting);
+						Promise.resolve(onBlurOrEnter(setting)).catch(this.reportError);
 					});
 					this.component.registerDomEvent(text.inputEl, 'keypress', (evt) => {
-						if (evt.key === 'Enter') onBlurOrEnter(setting);
+						if (evt.key === 'Enter') Promise.resolve(onBlurOrEnter(setting)).catch(this.reportError);
 					});
 				}
 			});
@@ -818,12 +831,14 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.addTextArea((text) => {
 				text.setValue(this.plugin.settings[settingName])
 					.setPlaceholder(placeholder ?? '')
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-					});
-				if (onBlur) this.component.registerDomEvent(text.inputEl, 'blur', onBlur);
+					}));
+				if (onBlur) this.component.registerDomEvent(text.inputEl, 'blur', () => {
+					Promise.resolve(onBlur()).catch(this.reportError);
+				});
 			});
 	}
 
@@ -833,37 +848,37 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				text.setValue('' + this.plugin.settings[settingName])
 					.setPlaceholder('' + DEFAULT_SETTINGS[settingName])
 					.then((text) => text.inputEl.type = 'number')
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value === '' ? DEFAULT_SETTINGS[settingName] : +value;
 						await this.plugin.saveSettings();
-					});
+					}));
 			});
 	}
 
-	addToggleSetting(settingName: KeysOfType<PDFPlusSettings, boolean>, extraOnChange?: (value: boolean) => void) {
+	addToggleSetting(settingName: KeysOfType<PDFPlusSettings, boolean>, extraOnChange?: (value: boolean) => void | Promise<void>) {
 		return this.addSetting(settingName)
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.settings[settingName])
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-						extraOnChange?.(value);
-					});
+						await extraOnChange?.(value);
+					}));
 			});
 	}
 
-	addColorPickerSetting(settingName: KeysOfType<PDFPlusSettings, HexString>, extraOnChange?: (value: HexString) => void) {
+	addColorPickerSetting(settingName: KeysOfType<PDFPlusSettings, HexString>, extraOnChange?: (value: HexString) => void | Promise<void>) {
 		return this.addSetting(settingName)
 			.addColorPicker((picker) => {
 				picker.setValue(this.plugin.settings[settingName])
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-						extraOnChange?.(value);
-					});
+						await extraOnChange?.(value);
+					}));
 			});
 	}
 
@@ -872,7 +887,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, ...args: any[]) {
 		let options: string[] = [];
 		let display = (optionValue: string) => optionValue;
-		let extraOnChange = (value: string) => { };
+		let extraOnChange: (value: string) => void | Promise<void> = () => { };
 		if (Array.isArray(args[0])) {
 			options = args[0];
 			if (typeof args[1] === 'function') display = args[1];
@@ -889,12 +904,12 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					dropdown.addOption(option, displayName);
 				}
 				dropdown.setValue(this.plugin.settings[settingName])
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-						extraOnChange?.(value);
-					});
+						await extraOnChange(value);
+					}));
 			});
 	}
 
@@ -908,7 +923,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				const index = this.plugin.settings[settingName];
 				const option = options[index];
 				dropdown.setValue(option)
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						const newIndex = options.indexOf(value);
 						if (newIndex !== -1) {
 							// @ts-ignore
@@ -916,7 +931,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 							extraOnChange?.(newIndex);
 						}
-					});
+					}));
 			});
 	}
 
@@ -929,12 +944,12 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					}
 				}
 				dropdown.setValue('' + this.plugin.settings[settingName])
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = +value;
 						await this.plugin.saveSettings();
 						extraOnChange?.(+value);
-					});
+					}));
 			});
 	}
 
@@ -944,11 +959,11 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				slider.setLimits(min, max, step)
 					.setValue(this.plugin.settings[settingName])
 					.setDynamicTooltip()
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-					});
+					}));
 			});
 	}
 
@@ -974,7 +989,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						.onSelect(({ item: folder }) => {
 							// @ts-ignore
 							this.plugin.settings[folderPathSettingName] = folder.path;
-							this.plugin.saveSettings();
+							this.plugin.saveSettings().catch(this.reportError);
 						});
 				})
 				.then((setting) => {
@@ -1038,41 +1053,41 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 		const locationSetting = this.addSetting(settingName)
 			.addDropdown((dropdown) => {
-				dropdown.onChange(async () => {
+				dropdown.onChange(this.handleAsync(async () => {
 					toggleVisibility();
 					// @ts-ignore
 					this.plugin.settings[settingName] = getNewAttachmentFolderPath();
 					await this.plugin.saveSettings();
-				});
+				}));
 				dropdown.addOptions(NEW_ATTACHMENT_LOCATIONS);
 				locationDropdown = dropdown;
 			});
 		const folderPathSetting = this.addSetting()
 			.addText((text) => {
 				text.setPlaceholder(defaultSubfolder)
-					.onChange(async () => {
+					.onChange(this.handleAsync(async () => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = getNewAttachmentFolderPath();
 						await this.plugin.saveSettings();
-					});
+					}));
 				new FuzzyFolderSuggest(this.app, text.inputEl)
 					.onSelect(() => {
-						setTimeout(async () => {
+						window.setTimeout(this.handleAsync(async () => {
 							// @ts-ignore
 							this.plugin.settings[settingName] = getNewAttachmentFolderPath();
 							await this.plugin.saveSettings();
-						});
+						}));
 					});
 				folderPathText = text;
 			});
 		const subfolderPathSetting = this.addSetting()
 			.addText((text) => {
 				text.setPlaceholder(defaultSubfolder)
-					.onChange(async () => {
+					.onChange(this.handleAsync(async () => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = getNewAttachmentFolderPath();
 						await this.plugin.saveSettings();
-					});
+					}));
 				subfolderPathText = text;
 			});
 
@@ -1137,14 +1152,14 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			});
 	}
 
-	async renderMarkdown(lines: string[] | string, el: HTMLElement) {
-		this.promises.push(this._renderMarkdown(lines, el));
-		el.addClass('markdown-rendered');
+	renderMarkdown(lines: string[] | string, el: HTMLElement) {
+		this.promises.push(this._renderMarkdown(lines, el).catch(this.reportError));
 	}
 
 	async _renderMarkdown(lines: string[] | string, el: HTMLElement) {
+		el.addClass('markdown-rendered');
 		await MarkdownRenderer.render(this.app, Array.isArray(lines) ? lines.join('\n') : lines, el, '', this.component);
-		if (el.childNodes.length === 1 && el.firstChild instanceof HTMLParagraphElement) {
+		if (el.childNodes.length === 1 && el.firstChild?.instanceOf(HTMLParagraphElement)) {
 			el.replaceChildren(...el.firstChild.childNodes);
 		}
 	}
@@ -1161,7 +1176,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						setTooltip(text.inputEl, 'Color name (case-insensitive)');
 					})
 					.setValue(name)
-					.onChange(async (newName) => {
+					.onChange(this.handleAsync(async (newName) => {
 						if (newName in colors) {
 							new Notice('This color name is already used.');
 							text.inputEl.addClass('error');
@@ -1188,33 +1203,33 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						colors[name] = color;
 						await this.plugin.saveSettings();
 						this.plugin.loadStyle();
-					});
+					}));
 			})
 			.addColorPicker((picker) => {
 				picker.setValue(color);
-				picker.onChange(async (newColor) => {
+				picker.onChange(this.handleAsync(async (newColor) => {
 					previousColor = color;
 					color = newColor;
 					colors[name] = color;
 					await this.plugin.saveSettings();
 					this.plugin.loadStyle();
-				});
+				}));
 			})
 			.addExtraButton((button) => {
 				button.setIcon('rotate-ccw')
 					.setTooltip('Return to previous color')
-					.onClick(async () => {
+					.onClick(this.handleAsync(async () => {
 						color = previousColor;
 						colors[name] = color;
 						await this.plugin.saveSettings();
 						this.plugin.loadStyle();
 						this.redisplay();
-					});
+					}));
 			})
 			.addExtraButton((button) => {
 				button.setIcon('trash')
 					.setTooltip('Delete')
-					.onClick(async () => {
+					.onClick(this.handleAsync(async () => {
 						if (this.plugin.settings.defaultColor === name) {
 							this.plugin.settings.defaultColor = '';
 						}
@@ -1222,7 +1237,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						this.plugin.loadStyle();
 						this.redisplay();
-					});
+					}));
 			});
 	}
 
@@ -1259,7 +1274,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						setTooltip(text.inputEl, configs.name.placeholder);
 					})
 					.setValue(name)
-					.onChange(async (newName) => {
+					.onChange(this.handleAsync(async (newName) => {
 						if (items.some((item) => getName(item) === newName)) {
 							new Notice(configs.name.duplicateMessage);
 							text.inputEl.addClass('error');
@@ -1278,10 +1293,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						}
 
 						await this.plugin.saveSettings();
-					});
+					}));
 			})
 			.then((setting) => {
-				if (configs.value.hasOwnProperty('formRows')) {
+				if (Object.prototype.hasOwnProperty.call(configs.value, 'formRows')) {
 					setting.addTextArea((textarea) => {
 						textarea.setPlaceholder(configs.value.placeholder)
 							.then((textarea) => {
@@ -1290,10 +1305,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								setTooltip(textarea.inputEl, configs.value.placeholder);
 							})
 							.setValue(value)
-							.onChange(async (newValue) => {
+							.onChange(this.handleAsync(async (newValue) => {
 								setValue(item, newValue);
 								await this.plugin.saveSettings();
-							});
+							}));
 					});
 				} else {
 					setting.addText((textarea) => {
@@ -1303,17 +1318,17 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								setTooltip(text.inputEl, configs.value.placeholder);
 							})
 							.setValue(value)
-							.onChange(async (newValue) => {
+							.onChange(this.handleAsync(async (newValue) => {
 								setValue(item, newValue);
 								await this.plugin.saveSettings();
-							});
+							}));
 					});
 				}
 			})
 			.addExtraButton((button) => {
 				button.setIcon('trash')
 					.setTooltip('Delete')
-					.onClick(async () => {
+					.onClick(this.handleAsync(async () => {
 						if (items.length === 1) {
 							new Notice(configs.delete.deleteLastMessage);
 							return;
@@ -1327,7 +1342,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						}
 						await this.plugin.saveSettings();
 						this.redisplay();
-					});
+					}));
 			})
 			.setClass('no-border');
 	}
@@ -1443,10 +1458,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			}
 		};
 
-		return this.addTextSetting(settingName, undefined, (setting) => {
+		return this.addTextSetting(settingName, undefined, async (setting) => {
 			// @ts-ignore
 			this.plugin.settings[settingName] = normalizeIconNameNoPrefix(this.plugin.settings[settingName]);
-			this.plugin.saveSettings();
+			await this.plugin.saveSettings();
 			renderAndValidateIcon(setting);
 		})
 			.then((setting) => {
@@ -1518,7 +1533,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						}
 					}
 					dropdown.setValue(currentValue)
-						.onChange((value) => {
+						.onChange(this.handleAsync(async (value) => {
 							if (value) {
 								// @ts-ignore
 								values[i] = value;
@@ -1526,9 +1541,9 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								while (values.length > i) values.pop();
 							}
 
-							this.plugin.saveSettings();
+							await this.plugin.saveSettings();
 							this.redisplay();
-						});
+						}));
 					dropdowns.push(dropdown);
 				})
 				.then((setting) => {
@@ -1545,7 +1560,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				this.scrollTo(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
 			};
-			activeWindow.setTimeout(() => {
+			window.setTimeout(() => {
 				const setting = this.items[id];
 				if (!name && setting) {
 					name = '"' + setting.nameEl.textContent + '"';
@@ -1561,7 +1576,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				this.scrollToHeading(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
 			};
-			activeWindow.setTimeout(() => {
+			window.setTimeout(() => {
 				const setting = this.headings.get(id);
 				if (!name && setting) {
 					name = '"' + setting.nameEl.textContent + '"';
@@ -1580,7 +1595,11 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.events.trigger('update');
 	}
 
-	async display(): Promise<void> {
+	display(): void {
+		this.displaySettings().catch(this.reportError);
+	}
+
+	private async displaySettings(): Promise<void> {
 		// First of all, re-display the installer version modal that was shown in plugin.onload again if necessary,
 		// in case the user has accidentally closed it.
 		InstallerVersionModal.openIfNecessary(this.plugin);
@@ -1597,7 +1616,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 
 		// Show which section is currently being displayed by highlighting the corresponding icon in the header.
-		activeWindow.setTimeout(() => this.updateHeaderElClass());
+		window.setTimeout(() => this.updateHeaderElClass());
 		for (const eventType of ['wheel', 'touchmove'] as const) {
 			this.component.registerDomEvent(
 				this.contentEl, eventType,
@@ -1607,15 +1626,15 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		}
 
 
-		this.contentEl.createDiv('top-note', async (el) => {
-			await this.renderMarkdown([
+		this.contentEl.createDiv('top-note', this.handleAsync(async (el: HTMLDivElement) => {
+			await this._renderMarkdown([
 				'> [!TIP]',
 				'> - You can easily navigate through the settings by clicking the icons in the header above.',
 				'> - Some settings below require reopening tabs or reloading the plugin to take effect.',
 				'> - [Visit the docs](https://ryotaushio.github.io/obsidian-pdf-plus/)',
 				'> - <a id="pdf-plus-funding-link-placeholder"></a>',
 			], el);
-			const linkEl = document.getElementById('pdf-plus-funding-link-placeholder');
+			const linkEl = el.querySelector<HTMLElement>('#pdf-plus-funding-link-placeholder');
 			if (linkEl) {
 				linkEl.textContent = 'Help me keep PDF++ alive!';
 				linkEl.onclick = (evt) => {
@@ -1623,7 +1642,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					this.updateHeaderElClassOnScroll(evt);
 				};
 			}
-		});
+		}));
 
 
 		this.addHeading('Editing PDF files', 'edit', 'lucide-save')
@@ -1716,8 +1735,9 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					toggle
 						.setValue(ignoredSplits.includes(split))
 						.onChange((value) => {
-							value ? ignoredSplits.push(split) : ignoredSplits.remove(split);
-							this.plugin.saveSettings();
+							if (value) ignoredSplits.push(split);
+							else ignoredSplits.remove(split);
+							this.plugin.saveSettings().catch(this.reportError);
 						});
 				})
 				.then((setting) => {
@@ -1922,12 +1942,12 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						'custom': 'Custom...',
 					})
 					.setValue(this.plugin.settings.defaultZoomValue.startsWith('page-') ? this.plugin.settings.defaultZoomValue : 'custom')
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						if (value === 'custom') value = '100';
 						this.plugin.settings.defaultZoomValue = value;
 						toggleCustomZoomLevelSettingVisibility();
 						await this.plugin.saveSettings();
-					});
+					}));
 			});
 		const toggleCustomZoomLevelSettingVisibility = this.getVisibilityToggler(
 			this.addSetting()
@@ -1936,10 +1956,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					slider.setLimits(10, 400, 5)
 						.setDynamicTooltip()
 						.setValue(this.plugin.settings.defaultZoomValue.startsWith('page-') ? 100 : parseInt(this.plugin.settings.defaultZoomValue))
-						.onChange(async (value) => {
+						.onChange(this.handleAsync(async (value) => {
 							this.plugin.settings.defaultZoomValue = '' + value;
 							await this.plugin.saveSettings();
-						});
+						}));
 				}),
 			() => !this.plugin.settings.defaultZoomValue.startsWith('page-')
 		);
@@ -2029,7 +2049,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 									.setValue(section.visible)
 									.onChange((value) => {
 										section.visible = value;
-										this.plugin.saveSettings();
+										this.plugin.saveSettings().catch(this.reportError);
 									});
 							})
 							.then((setting) => {
@@ -2179,6 +2199,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.then((setting) => this.renderMarkdown([
 				// 'The template format that will be used when copying a link to a selection or an annotation in PDF viewer. ',
 				'Each `{{...}}` will be evaluated as a JavaScript expression given the variables listed below.',
+				'Only use templates you trust: these expressions run with full plugin permissions, can access files and the network, and are not sandboxed.',
 				'',
 				'Available variables are:',
 				'',
@@ -2329,10 +2350,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.addToggle((toggle) => {
 				toggle
 					.setValue(this.plugin.settings.autoFocus)
-					.onChange((value) => {
-						this.plugin.toggleAutoFocus(value);
+					.onChange(this.handleAsync(async (value) => {
+						await this.plugin.toggleAutoFocus(value);
 						this.redisplay(); // Reflect the change to the auto-paste toggle (we cannot activate both of them at the same time)
-					});
+					}));
 			});
 		this.addToggleSetting('autoFocusToggleRibbonIcon', () => this.redisplay())
 			.setName('Show an icon to toggle auto-focus in the left ribbon menu')
@@ -2355,10 +2376,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.addToggle((toggle) => {
 				toggle
 					.setValue(this.plugin.settings.autoPaste)
-					.onChange((value) => {
-						this.plugin.toggleAutoPaste(value);
+					.onChange(this.handleAsync(async (value) => {
+						await this.plugin.toggleAutoPaste(value);
 						this.redisplay(); // Reflect the change to the auto-focus toggle (you canot activate both of them at the same time)
-					});
+					}));
 			});
 		this.addToggleSetting('autoPasteToggleRibbonIcon', () => this.redisplay())
 			.setName('Show an icon to toggle auto-paste in the left ribbon menu')
@@ -2467,25 +2488,25 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.setDesc('Creates a new note and opens it in a new pane specified in the "How to open target markdown file when not opened" option.');
 		this.addTextSetting('newFileNameFormat', 'Leave blank not to specify')
 			.setName(`New note title format`)
-			.then(async (setting) => {
-				await this.renderMarkdown([
+			.then(this.handleAsync(async (setting: Setting) => {
+				await this._renderMarkdown([
 					'If this option is left blank or the active file is not a PDF, "Untitled \\*" will be used (if the language is set to English). You can use the following variables: `file`, `folder`, `app`, and other global variables such as `moment`.',
 				], setting.descEl);
 				setting.descEl.createSpan({ text: 'See ' });
 				setting.descEl.appendChild(this.createLinkToHeading('template', 'above'));
 				setting.descEl.createSpan({ text: ' for the details about these variables.' });
-			});
+			}));
 		this.addTextSetting('newFileTemplatePath', 'Leave blank not to use a template')
 			.setName('Template file path')
-			.then(async (setting) => {
-				await this.renderMarkdown([
+			.then(this.handleAsync(async (setting: Setting) => {
+				await this._renderMarkdown([
 					'You can leave this blank if you don\'t want to use a template.',
 					'You can use `file`, `folder`, `app`, and other global variables such as `moment`.',
 				], setting.descEl);
 				setting.descEl.createSpan({ text: 'See ' });
 				setting.descEl.appendChild(this.createLinkToHeading('template', 'above'));
 				setting.descEl.createSpan({ text: ' for the details about these variables.' });
-				await this.renderMarkdown([
+				await this._renderMarkdown([
 					'You can also include [Templater](obsidian://show-plugin?id=templater-obsidian) syntaxes in the template.',
 					'In that case, make sure the "Trigger templater on new file creation" option is enabled in the Templater settings.',
 					'',
@@ -2503,9 +2524,9 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				new FuzzyMarkdownFileSuggest(this.app, inputEl)
 					.onSelect(({ item: file }) => {
 						this.plugin.settings.newFileTemplatePath = file.path;
-						this.plugin.saveSettings();
+						this.plugin.saveSettings().catch(this.reportError);
 					});
-			});
+			}));
 
 
 		this.addHeading('PDF Annotations', 'annot', 'lucide-message-square');
@@ -2935,7 +2956,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.setName('Clear highlights after a certain amount of time')
 			.addToggle((toggle) => {
 				toggle.setValue(this.plugin.settings.highlightDuration > 0)
-					.onChange(async (value) => {
+					.onChange(this.handleAsync(async (value) => {
 						this.plugin.settings.highlightDuration = value
 							? (this.plugin.settings.highlightDuration > 0
 								? this.plugin.settings.highlightDuration
@@ -2943,7 +2964,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 							: 0;
 						await this.plugin.saveSettings();
 						this.redisplay();
-					});
+					}));
 			});
 		if (this.plugin.settings.highlightDuration > 0) {
 			this.addSliderSetting('highlightDuration', 0.1, 10, 0.05)
@@ -3114,10 +3135,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				}
 				dropdown
 					.setValue(this.plugin.settings.modifierToDropExternalPDFToCreateDummy.join('+'))
-					.onChange(async (value) => {
-						this.plugin.settings.modifierToDropExternalPDFToCreateDummy = value.split('+') as Modifier[];
+					.onChange(this.handleAsync(async (value) => {
+						this.plugin.settings.modifierToDropExternalPDFToCreateDummy = value ? value.split('+') as Modifier[] : [];
 						await this.plugin.saveSettings();
-					});
+					}));
 			});
 
 		this.addSetting('externalURIPatterns')
@@ -3129,11 +3150,11 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 				text.setValue(this.plugin.settings.externalURIPatterns.join('\n'));
 
-				this.component.registerDomEvent(text.inputEl, 'focusout', async () => {
+				this.component.registerDomEvent(text.inputEl, 'focusout', this.handleAsync(async () => {
 					const value = text.inputEl.value;
 					this.plugin.settings.externalURIPatterns = value.split('\n').map((line) => line.trim()).filter((line) => line);
 					await this.plugin.saveSettings();
-				});
+				}));
 			});
 
 
@@ -3190,9 +3211,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.showConditionally([
 			this.addTextSetting('vimrcPath', undefined, () => this.plugin.vimrc = null)
 				.setName('Vimrc file path (optional)')
-				.then(async (setting) => {
-					await this.renderMarkdown([
+				.then(this.handleAsync(async (setting: Setting) => {
+					await this._renderMarkdown([
 						'Only the [Ex commands supported by PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus/blob/main/src/vim/ex-commands.ts) are allowed.',
+						'Only load a vimrc you trust. Its JavaScript and desktop shell commands run with your permissions, including file and network access.',
 						'',
 						'Example (not necessarily recommendations):',
 						'```',
@@ -3221,9 +3243,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					new FuzzyFileSuggest(this.app, inputEl)
 						.onSelect(({ item: file }) => {
 							this.plugin.settings.vimrcPath = file.path;
-							this.plugin.saveSettings();
+							this.plugin.vimrc = null;
+							this.plugin.saveSettings().catch(this.reportError);
 						});
-				}),
+				})),
 			this.addHeading('Visual mode', 'vim-visual'),
 			this.addToggleSetting('vimVisualMotion')
 				.setName('Use motion keys to adjust text selection')
@@ -3321,9 +3344,13 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 
 		this.addHeading('Misc', 'misc', 'lucide-more-horizontal');
-		this.addToggleSetting('autoCheckForUpdates', () => this.plugin.checkForUpdatesIfNeeded())
+		this.addToggleSetting('autoCheckForUpdates', async (enabled) => {
+			this.plugin.settings.updateCheckConsent = enabled;
+			await this.plugin.saveSettings();
+			await this.plugin.checkForUpdatesIfNeeded();
+		})
 			.setName('Automatically check for updates')
-			.setDesc('If enabled, PDF++ will automatically check for updates every 24 hours and notify you if a new version is available.');
+			.setDesc('Opt in to a request to api.github.com on startup and every 24 hours for release metadata. No vault contents or clipboard data are sent. Disabled by default.');
 		this.addToggleSetting('fixObsidianTextSelectionBug')
 			.setName(`Fix Obsidian 1.9's text selection bug`)
 			.then((setting) => {
@@ -3401,7 +3428,11 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		await Promise.all(this.promises);
 	}
 
-	async hide() {
+	hide(): void {
+		this.saveOnHide().catch(this.reportError);
+	}
+
+	private async saveOnHide() {
 		this.plugin.settings.colors = Object.fromEntries(
 			Object.entries(this.plugin.settings.colors).filter(([name, color]) => name && isHexString(color))
 		);
@@ -3423,11 +3454,12 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 		this.plugin.validateAutoFocusAndAutoPasteSettings();
 
-		await this.plugin.saveSettings();
-
-		this.plugin.loadStyle();
-
-		this.promises = [];
-		this.component.unload();
+		try {
+			await this.plugin.saveSettings();
+			this.plugin.loadStyle();
+		} finally {
+			this.promises = [];
+			this.component.unload();
+		}
 	}
 }

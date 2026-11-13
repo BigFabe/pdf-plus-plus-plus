@@ -1,4 +1,4 @@
-import { TFile, ViewStateResult } from 'obsidian';
+import { Notice, TFile, ViewStateResult } from 'obsidian';
 import { around } from 'monkey-around';
 
 import PDFPlus from 'main';
@@ -17,10 +17,9 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
     if (!plugin.patchStatus.pdfView) {
         plugin.register(around(pdfView.constructor.prototype, {
             getState(old) {
-                return function () {
+                return function (this: PDFView) {
                     const ret = old.call(this);
-                    const self = this as PDFView;
-                    const child = self.viewer.child;
+                    const child = this.viewer.child;
                     const pdfViewer = child?.pdfViewer?.pdfViewer;
                     if (pdfViewer) {
                         // When the PDF viewer's top edge is on the lower half of the previous page,
@@ -36,13 +35,13 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
                 };
             },
             setState(old) {
-                return function (state: any, result: ViewStateResult): Promise<void> {
+                // State belongs to Obsidian's undocumented PDF view implementation.
+                return function (this: PDFView, state: any, result: ViewStateResult): Promise<void> {
                     if (plugin.settings.alwaysRecordHistory) {
                         result.history = true;
                     }
                     return old.call(this, state, result).then(() => {
-                        const self = this as PDFView;
-                        const child = self.viewer.child;
+                        const child = this.viewer.child;
                         const pdfViewer = child?.pdfViewer?.pdfViewer;
                         if (typeof state.page === 'number') {
                             if (pdfViewer) {
@@ -54,14 +53,13 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
             },
             // Called inside onModify
             onLoadFile(old) {
-                return async function (file: TFile) {
+                return async function (this: PDFView, file: TFile) {
                     // The original implementation is `this.viewer.loadFile(e)`, which ignores the subpath
 
                     // Restore the last page, position & zoom level on file mofiication
-                    const self = this as PDFView;
-                    const state = self.getState();
+                    const state = this.getState();
                     const subpath = lib.viewStateToSubpath(state);
-                    return self.viewer.loadFile(file, subpath ?? undefined);
+                    return this.viewer.loadFile(file, subpath ?? undefined);
                 };
             }
         }));
@@ -72,7 +70,12 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
         plugin.classes.PDFView = pdfView.constructor;
     }
 
-    if (!plugin.patchStatus.pdfInternals) patchPDFInternals(plugin, pdfView.viewer);
+    if (!plugin.patchStatus.pdfInternals) {
+        patchPDFInternals(plugin, pdfView.viewer).catch((error) => {
+            new Notice(`${plugin.manifest.name}: Failed to patch the PDF view.`);
+            console.error(error);
+        });
+    }
 
     // don't return true here; if patchPDFInternals is successful, plugin.patchStatus.pdfInternals
     // will be set to true when this function is called next time, and then this function will

@@ -51,8 +51,7 @@ function* permutationsWithReplacement<T>(arr: ArrayLike<T>, n: number) {
     const len = arr.length;
     const counters = new Array(n).fill(0);
     let index = 1;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for (const _ of range(Math.pow(len, n))) {
+    for (let iteration = 0; iteration < Math.pow(len, n); iteration++) {
         yield counters.map(i => arr[i]);
         for (const i of range(counters.length)) {
             if (knuth_mod(index, Math.pow(len, counters.length - 1 - i)) === 0) {
@@ -83,8 +82,7 @@ function* islice<T>(iterable: Iterable<T>, start: number, stop?: number) {
     }
 
     // Skip elements until start
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for (const _ of range(start)) {
+    for (let skipped = 0; skipped < start; skipped++) {
         const res = iter.next();
         if (res.done) return;
     }

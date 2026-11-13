@@ -3,6 +3,7 @@ import { VimBindingsMode } from './mode';
 import { PDFPageTextStructureParser, PDFTextPos } from './text-structure-parser';
 import { getNodeAndOffsetOfTextPos, getTextLayerInfo, isSelectionForward, repeat, swapSelectionAnchorAndFocus } from 'utils';
 import { showContextMenuAtSelection } from 'context-menu';
+import { Notice } from 'obsidian';
 
 
 export class VimVisualMode extends VimBindingsMode {
@@ -111,7 +112,7 @@ export class VimVisualMode extends VimBindingsMode {
                     swapSelectionAnchorAndFocus(selection);
                 }
             }),
-            'y': () => {
+            'y': async () => {
                 const selection = this.doc.getSelection();
                 if (selection) {
                     let text = selection.toString();
@@ -119,7 +120,7 @@ export class VimVisualMode extends VimBindingsMode {
                         if (this.settings.copyAsSingleLine) {
                             text = this.lib.toSingleLine(text);
                         }
-                        navigator.clipboard.writeText(text);
+                        await navigator.clipboard.writeText(text);
                     }
                     selection.empty();
                 }
@@ -132,9 +133,12 @@ export class VimVisualMode extends VimBindingsMode {
                 const selection = this.doc.getSelection();
                 if (selection) {
                     // Use setTimeout to avoid the menu hiden by this.enterNormalMode()
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         this.viewer.then((child) => {
-                            showContextMenuAtSelection(this.plugin, child, selection);
+                            showContextMenuAtSelection(this.plugin, child, selection).catch((error: unknown) => {
+                                console.error('PDF++: Failed to show context menu', error);
+                                new Notice('PDF++: Failed to show context menu. See console for details.');
+                            });
                         });
                     });
                 }
@@ -174,7 +178,7 @@ export class VimVisualMode extends VimBindingsMode {
             let n;
             let offset = 0;
             // depth-first
-            while (n = iter.nextNode()) {
+            while ((n = iter.nextNode())) {
                 if (n === node) {
                     offset += n.nodeType === Node.TEXT_NODE ? offsetInNode : Array.from(node.childNodes).slice(0, offsetInNode).map((node) => node.textContent!.length).reduce((acc, cur) => acc + cur, 0);
                     return offset;

@@ -1,4 +1,4 @@
-import { KeymapInfo, Scope } from 'obsidian';
+import { KeymapInfo, Scope, Notice } from 'obsidian';
 
 import { binarySearch, binarySearchForRangeStartingWith, isTargetHTMLElement, isTypable, stringCompare } from 'utils';
 
@@ -28,7 +28,7 @@ export class VimScope extends Scope {
         const cmp = (a: VimKeymap, b: VimKeymap) => stringCompare(a.keys, b.keys);
 
         for (const mode of modes) {
-            if (!this.modeToKeymaps.hasOwnProperty(mode)) {
+            if (!Object.prototype.hasOwnProperty.call(this.modeToKeymaps, mode)) {
                 this.modeToKeymaps[mode] = Object.entries(keymapDict)
                     .map(([keys, func]) => { return { keys, func }; })
                     .sort(cmp);
@@ -75,7 +75,7 @@ export class VimScope extends Scope {
 
     noremap(modes: string[], fromTo: Record<string, string>) {
         for (const mode of modes) {
-            if (this.modeToKeymaps.hasOwnProperty(mode)) {
+            if (Object.prototype.hasOwnProperty.call(this.modeToKeymaps, mode)) {
                 for (const from in fromTo) {
                     const to = fromTo[from];
                     const { found, index } = binarySearch(this.modeToKeymaps[mode], (map) => stringCompare(to, map.keys));
@@ -90,7 +90,7 @@ export class VimScope extends Scope {
 
     unmap(modes: string[], keys: string[]) {
         for (const mode of modes) {
-            if (this.modeToKeymaps.hasOwnProperty(mode)) {
+            if (Object.prototype.hasOwnProperty.call(this.modeToKeymaps, mode)) {
                 for (const key of keys) {
                     const { found, index } = binarySearch(this.modeToKeymaps[mode], (map) => stringCompare(key, map.keys));
                     if (found) {
@@ -128,6 +128,18 @@ export class VimScope extends Scope {
         this.typableModes.push(...modes);
     }
 
+    private runCommand(callback: () => unknown) {
+        const reportError = (error: unknown) => {
+            console.error('PDF++ (Vim mode): Command failed', error);
+            new Notice(`PDF++ (Vim mode): ${error instanceof Error ? error.message : String(error)}`);
+        };
+        try {
+            Promise.resolve(callback()).catch(reportError);
+        } catch (error) {
+            reportError(error);
+        }
+    }
+
     handleKey(evt: KeyboardEvent, info: KeymapInfo) {
         let shouldCallParent = true;
 
@@ -143,7 +155,7 @@ export class VimScope extends Scope {
                 return this.reset();
             }
             if (key === '<Esc>' || this.escapeAliases.includes(key)) {
-                this.onEscapeCallbacks.forEach((callback) => callback(key === '<Esc>'));
+                this.onEscapeCallbacks.forEach((callback) => this.runCommand(() => callback(key === '<Esc>')));
                 return this.reset();
             }
             this.currentKeys += key;
@@ -169,7 +181,7 @@ export class VimScope extends Scope {
                 const keymap = keymaps[range.from];
                 if (keymap.keys === keysWithoutNumber) {
                     this.reset();
-                    keymap.func(repeat);
+                    this.runCommand(() => keymap.func(repeat));
                     evt.preventDefault();
                     shouldCallParent = false;
                     return;

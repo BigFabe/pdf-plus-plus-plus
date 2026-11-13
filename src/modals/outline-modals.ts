@@ -1,7 +1,7 @@
 import { PDFOutlineItem, PDFOutlines } from 'lib/outlines';
 import PDFPlus from 'main';
 import { PDFPlusModal } from 'modals';
-import { Setting, FuzzySuggestModal } from 'obsidian';
+import { Setting, FuzzySuggestModal, Notice } from 'obsidian';
 
 
 interface OutlineInfo {
@@ -74,13 +74,18 @@ export class PDFOutlineTitleModal extends PDFPlusModal {
     }
 
     then(callback: (answer: OutlineInfo) => any) {
-        this.submitted && this.title !== null ? callback({ title: this.title }) : this.next.push(callback);
+        if (this.submitted && this.title !== null) {
+            const title = this.title;
+            Promise.resolve().then(() => callback({ title })).catch(this.reportError);
+        } else {
+            this.next.push(callback);
+        }
         return this;
     }
 
     submitAndClose() {
         const inputEl = this.contentEl.querySelector('#pdf-plus-outline-title-modal');
-        if (inputEl instanceof HTMLInputElement) {
+        if (inputEl?.instanceOf(HTMLInputElement)) {
             this.title = inputEl.value;
             this.submitted = true;
             this.close();
@@ -88,8 +93,12 @@ export class PDFOutlineTitleModal extends PDFPlusModal {
     }
 
     onClose() {
+        super.onClose();
         if (this.submitted && this.title !== null) {
-            this.next.forEach((callback) => callback({ title: this.title! }));
+            const title = this.title;
+            Promise.resolve().then(async () => {
+                for (const callback of this.next) await callback({ title });
+            }).catch(this.reportError);
         }
     }
 }
@@ -135,6 +144,11 @@ export class PDFOutlineMoveModal extends FuzzySuggestModal<PDFOutlineItem> {
     }
 
     onChooseItem(item: PDFOutlineItem): void {
-        this.next.forEach((callback) => callback(item));
+        Promise.resolve().then(async () => {
+            for (const callback of this.next) await callback(item);
+        }).catch((error: unknown) => {
+            console.error(`${this.plugin.manifest.name}: Failed to move outline item`, error);
+            new Notice(`${this.plugin.manifest.name}: Failed to move outline item. See console for details.`);
+        });
     }
 }

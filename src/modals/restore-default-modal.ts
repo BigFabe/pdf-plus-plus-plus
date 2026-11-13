@@ -20,11 +20,11 @@ export class RestoreDefaultModal extends PDFPlusModal {
             new ButtonComponent(el)
                 .setButtonText('I understand, restore default settings')
                 .setWarning()
-                .onClick(async () => {
+                .onClick(this.handleAsync(async () => {
                     await this.plugin.restoreDefaultSettings();
                     this.close();
                     new Notice(`${this.plugin.manifest.name}: Default setting restored. Note that some options require a restart to take effect.`, 6000);
-                });
+                }));
             new ButtonComponent(el)
                 .setButtonText('Cancel')
                 .onClick(() => {
@@ -32,7 +32,7 @@ export class RestoreDefaultModal extends PDFPlusModal {
                 });
         });
 
-        setTimeout(() => {
+        window.setTimeout(() => {
             const activeEl = this.containerEl.doc.activeElement;
             if (activeEl && activeEl.instanceOf(HTMLButtonElement) && this.containerEl.contains(activeEl)) {
                 // Avoid an accidental press of the button

@@ -103,8 +103,12 @@ class PDFPageLabelSettingsForRange {
 export class PDFPageLabelEditModal extends PDFPageLabelModal {
     buttonSetting: Setting | null = null;
 
-    async onOpen() {
+    onOpen() {
         super.onOpen();
+        this.initialize().catch(this.reportError);
+    }
+
+    private async initialize() {
 
         this.titleEl.setText(`${this.plugin.manifest.name}: edit page labels`);
         new Setting(this.contentEl)
@@ -118,7 +122,7 @@ export class PDFPageLabelEditModal extends PDFPageLabelModal {
                     setting.descEl,
                     '',
                     this.component
-                );
+                ).catch(this.reportError);
             })
             .then((setting) => this.contentEl.prepend(setting.settingEl));
 
@@ -290,7 +294,7 @@ export class PDFPageLabelEditModal extends PDFPageLabelModal {
                     button
                         .setButtonText('Save')
                         .setCta()
-                        .onClick(async () => {
+                        .onClick(this.handleAsync(async () => {
                             if (this.pageLabels && this.doc) {
                                 if (this.pageLabels.rangeCount() > 0) {
                                     this.pageLabels.setToDocument(this.doc);
@@ -300,7 +304,7 @@ export class PDFPageLabelEditModal extends PDFPageLabelModal {
                                 new Notice(`${this.plugin.manifest.name}: Something went wrong.`);
                             }
                             this.close();
-                        });
+                        }));
                 })
                 .addButton((button) => {
                     button

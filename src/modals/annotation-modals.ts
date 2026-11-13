@@ -45,7 +45,7 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
     buttonContainerEl: HTMLElement;
 
     static isSubtypeSupported(subtype: string): subtype is typeof PDFAnnotationEditModal.supportedSubtypes[number] {
-        return (PDFAnnotationEditModal.supportedSubtypes as unknown as string[]).includes(subtype);
+        return (PDFAnnotationEditModal.supportedSubtypes as readonly string[]).includes(subtype);
     }
 
     static forSubtype(subtype: typeof PDFAnnotationEditModal.supportedSubtypes[number], ...args: ConstructorParameters<typeof PDFAnnotationModal>): PDFAnnotationEditModal {
@@ -128,18 +128,6 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
                         const rgb = this.newValues.color;
                         writers.push((annot: PDFDict) => {
                             pdflibAPI.setColorToAnnotation(annot, rgb);
-
-                            this.lib.getLatestBacklinksForAnnotation(this.file, this.page, this.id)
-                                .then((caches) => {
-                                    caches.forEach((cache) => {
-                                        return this.lib.composer.linkUpdater.updateLinkColor(
-                                            cache.refCache,
-                                            cache.sourcePath,
-                                            { type: 'rgb', rgb },
-                                            { linktext: false }
-                                        );
-                                    });
-                                });
                         });
                     }
                     break;
@@ -175,9 +163,18 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
         }
 
         if (writers.length) {
-            await pdflibAPI.processAnnotation(this.file, this.page, this.id, async (annot) => {
+            await pdflibAPI.processAnnotation(this.file, this.page, this.id, (annot) => {
                 writers.forEach((writer) => writer(annot));
             });
+            const rgb = this.newValues.color;
+            if (rgb && rgb !== this.oldValues.color) {
+                const caches = await this.lib.getLatestBacklinksForAnnotation(this.file, this.page, this.id);
+                for (const cache of caches) {
+                    await this.lib.composer.linkUpdater.updateLinkColor(
+                        cache.refCache, cache.sourcePath, { type: 'rgb', rgb }, { linktext: false }
+                    );
+                }
+            }
         }
     }
 
@@ -218,7 +215,7 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
     }
 
     addOpacitySetting() {
-        if (this.oldValues.opacity || this.allowNoValue.opacity) {
+        if (this.oldValues.opacity !== undefined || this.allowNoValue.opacity) {
             new Setting(this.contentEl)
                 .setName('Opacity')
                 .addSlider((slider) => {
@@ -234,7 +231,7 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
     }
 
     addBorderWidthSetting() {
-        if (this.oldValues.borderWidth || this.allowNoValue.borderWidth) {
+        if (this.oldValues.borderWidth !== undefined || this.allowNoValue.borderWidth) {
             new Setting(this.contentEl)
                 .setName('Draw border')
                 .addToggle((toggle) => {
@@ -269,7 +266,9 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
                 ?? this.app.hotkeyManager.getDefaultHotkeys('markdown:toggle-preview');
             if (hotkeys && hotkeys.length) {
                 const hotkey = hotkeys[0];
-                this.scope.register(hotkey.modifiers, hotkey.key, () => this.togglePreview());
+                this.scope.register(hotkey.modifiers, hotkey.key, () => {
+                    this.togglePreview().catch(this.reportError);
+                });
             }
         }
     }
@@ -342,12 +341,15 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
     }
 
     onSaveButtonClick() {
-        this.writeNewValues();
-        this.close();
+        this.writeNewValues().then(() => this.close()).catch(this.reportError);
     }
 
-    async onOpen() {
+    onOpen() {
         super.onOpen();
+        this.initialize().catch(this.reportError);
+    }
+
+    private async initialize() {
         this.titleEl.setText(`${this.plugin.manifest.name}: edit annotation contents`);
         await this.readOldValues();
 
@@ -375,7 +377,7 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
         this.addButtons();
     }
 
-    async showEditor() {
+    showEditor() {
         this.editorEl?.show();
         this.previewEl?.hide();
     }
@@ -418,8 +420,7 @@ export class PDFAnnotationDeleteModal extends PDFAnnotationModal {
                     .setButtonText('Delete')
                     .setWarning()
                     .onClick(() => {
-                        this.deleteAnnotation();
-                        this.close();
+                        this.deleteAnnotation().then(() => this.close()).catch(this.reportError);
                     });
             })
             .addButton((button) => {
@@ -446,6 +447,6 @@ export class PDFAnnotationDeleteModal extends PDFAnnotationModal {
     }
 
     deleteAnnotation() {
-        this.lib.highlight.writeFile.deleteAnnotation(this.file, this.page, this.id);
+        return this.lib.highlight.writeFile.deleteAnnotation(this.file, this.page, this.id);
     }
 }

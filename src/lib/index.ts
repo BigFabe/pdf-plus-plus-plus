@@ -81,8 +81,13 @@ export class PDFPlusLib {
      */
     registerPDFEvent<K extends keyof PDFJsEventMap>(name: K, eventBus: EventBus, component: Component | null, callback: (data: PDFJsEventMap[K]) => any) {
         const listener = async (data: any) => {
-            await callback(data);
-            if (!component) eventBus.off(name, listener);
+            try {
+                await callback(data);
+            } catch (error) {
+                console.error(`${this.plugin.manifest.name}: Failed to handle PDF event ${name}.`, error);
+            } finally {
+                if (!component) eventBus.off(name, listener);
+            }
         };
         component?.register(() => eventBus.off(name, listener));
         eventBus.on(name, listener);
@@ -455,7 +460,7 @@ export class PDFPlusLib {
     }
 
     registerGlobalDomEvent<K extends keyof DocumentEventMap>(component: Component, type: K, callback: (this: HTMLElement, ev: DocumentEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void {
-        component.registerDomEvent(document, type, callback, options);
+        component.registerDomEvent(this.app.workspace.containerEl.ownerDocument, type, callback, options);
 
         this.app.workspace.onLayoutReady(() => {
             // For the currently opened windows
@@ -1010,11 +1015,11 @@ export class PDFPlusLib {
         return base64ToArrayBuffer(base64);
     }
 
-    getOptionalRenderParameters(): OptionalRenderParameters {
+    getOptionalRenderParameters(doc: Document = activeDocument): OptionalRenderParameters {
         return this.plugin.settings.rectFollowAdaptToTheme && this.app.loadLocalStorage('pdfjs-is-themed')
             ? {
-                background: document.body.getCssPropertyValue('--pdf-page-background'),
-                invert: document.body.hasClass('theme-dark'),
+                background: doc.body.getCssPropertyValue('--pdf-page-background'),
+                invert: doc.body.hasClass('theme-dark'),
             } : {};
     }
 
@@ -1051,7 +1056,9 @@ export class PDFPlusLib {
 
     onDocumentReady(pdfViewer: ObsidianViewer, callback: (doc: PDFDocumentProxy) => any) {
         if (pdfViewer.pdfLoadingTask) {
-            pdfViewer.pdfLoadingTask.promise.then((doc) => callback(doc));
+            pdfViewer.pdfLoadingTask.promise.then((doc) => callback(doc)).catch((error) => {
+                console.error(`${this.plugin.manifest.name}: Failed to process the loaded PDF document.`, error);
+            });
             return;
         }
 

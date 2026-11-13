@@ -14,8 +14,8 @@ const listItemContainsInlineFields = (item: ListItem, app: App, propertyName: st
     let values = Array.isArray(item.value) ? item.value : [item.value];
     values = values.filter((value): value is Link => (
         value
-        && value.hasOwnProperty('path')
-        && value.hasOwnProperty('subpath')
+        && Object.prototype.hasOwnProperty.call(value, 'path')
+        && Object.prototype.hasOwnProperty.call(value, 'subpath')
     ));
 
     const cache = app.metadataCache.getCache(path);
@@ -34,12 +34,12 @@ const listItemContainsInlineFields = (item: ListItem, app: App, propertyName: st
     return numInlineFields > 0;
 };
 
-export const withFilesWithInlineFields = (plugin: PDFPlus, callback: (files: TFile[]) => void) => {
+export const withFilesWithInlineFields = (plugin: PDFPlus, callback: (files: TFile[]) => void | Promise<void>) => {
     const app = plugin.app;
 
     const onDataviewReady = async () => {
         const files = await getFilesWithInlineFields(plugin);
-        callback(files);
+        await callback(files);
     };
 
     app.workspace.onLayoutReady(() => {
@@ -48,11 +48,15 @@ export const withFilesWithInlineFields = (plugin: PDFPlus, callback: (files: TFi
 
         // @ts-ignore
         if (dvPlugin.index.initialized) {
-            onDataviewReady();
+            onDataviewReady().catch((error) => {
+                console.error(`${plugin.manifest.name}: Failed to process Dataview inline fields.`, error);
+            });
         } else {
             // @ts-ignore
             const ref = app.metadataCache.on('dataview:index-ready', () => {
-                onDataviewReady();
+                onDataviewReady().catch((error) => {
+                    console.error(`${plugin.manifest.name}: Failed to process Dataview inline fields.`, error);
+                });
                 app.metadataCache.offref(ref);
             });
             plugin.registerEvent(ref);
@@ -222,13 +226,17 @@ export class DataviewInlineFieldsModal extends PDFPlusModal {
                 new ButtonComponent(el)
                     .setButtonText(files.length >= 2 ? 'Copy links as markdown' : 'Copy link as markdown')
                     .setCta()
-                    .onClick(async () => {
+                    .onClick(() => {
                         const text =
                             files.length >= 2 ?
                                 files.map((file) => '- ' + this.app.fileManager.generateMarkdownLink(file, '')).join('\n') :
                                 this.app.fileManager.generateMarkdownLink(files[0], '');
-                        await navigator.clipboard.writeText(text);
-                        new Notice(`${this.plugin.manifest.name}: Copied!`);
+                        this.contentEl.win.navigator.clipboard.writeText(text).then(() => {
+                            new Notice(`${this.plugin.manifest.name}: Copied!`);
+                        }).catch((error) => {
+                            console.error(error);
+                            new Notice(`${this.plugin.manifest.name}: Failed to copy the links.`);
+                        });
                     });
             }
             new ButtonComponent(el)

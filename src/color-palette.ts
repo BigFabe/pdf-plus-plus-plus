@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, setIcon, setTooltip } from 'obsidian';
+import { Menu, Notice, Platform, requestUrl, setIcon, setTooltip } from 'obsidian';
 
 import PDFPlus from 'main';
 import { KeysOfType, getEventCoords, isHexString, showMenuUnderParentEl, isTargetHTMLElement } from 'utils';
@@ -379,7 +379,10 @@ export class ColorPalette extends PDFPlusComponent {
             setIcon(el, 'lucide-import');
             setTooltip(el, `Import external PDF into vault`);
             el.addEventListener('click', () => {
-                this.importFile();
+                this.importFile().catch((error) => {
+                    console.error(`${this.plugin.manifest.name}: Failed to import external PDF.`, error);
+                    new Notice(`${this.plugin.manifest.name}: PDF import failed. See console for details.`);
+                });
             });
         });
 
@@ -403,20 +406,30 @@ export class ColorPalette extends PDFPlusComponent {
             return;
         }
 
-        const res = await fetch(url);
-        if (res.ok) {
-            const buffer = await res.arrayBuffer();
-            await this.app.vault.modifyBinary(file, buffer);
-
-            this.removeImportButton();
-            if (this.paletteEl) {
-                this.addWriteFileToggle(this.paletteEl);
+        let buffer: ArrayBuffer;
+        if (/^https?:\/\//i.test(url)) {
+            const res = await requestUrl({ url, throw: false });
+            if (res.status < 200 || res.status >= 300) {
+                throw new Error(`PDF import failed with HTTP status ${res.status}.`);
             }
-            new Notice(`${this.plugin.manifest.name}: Successfully imported the PDF file into the vault.`);
-            return;
+            buffer = res.arrayBuffer;
+        } else {
+            if (!url.startsWith('blob:') && !url.startsWith(Platform.resourcePathPrefix)) {
+                throw new Error('Unsupported PDF import URL scheme.');
+            }
+            // Blob URLs and Obsidian's local resource scheme are not HTTP requests;
+            // requestUrl cannot read them, so keep browser fetch for these local bytes.
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`PDF import failed with status ${res.status}.`);
+            buffer = await res.arrayBuffer();
         }
+        await this.app.vault.modifyBinary(file, buffer);
 
-        new Notice(`${this.plugin.manifest.name}: Import failed. Response status: ${res.status}`);
+        this.removeImportButton();
+        if (this.paletteEl) {
+            this.addWriteFileToggle(this.paletteEl);
+        }
+        new Notice(`${this.plugin.manifest.name}: Successfully imported the PDF file into the vault.`);
     }
 
     setWriteFile(value: boolean) {
@@ -593,7 +606,7 @@ export class ColorPalette extends PDFPlusComponent {
         if (this.plugin.settings.showStatusInToolbar && this.statusEl) {
             this.statusEl.setText(text);
             if (durationMs > 0) {
-                setTimeout(() => {
+                window.setTimeout(() => {
                     if (this.statusEl?.getText() === text) {
                         this.statusEl.setText('');
                     }

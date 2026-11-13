@@ -39,8 +39,8 @@ export const exCommands = (vim: VimBindings): ExCommand[] => {
         },
         { id: 'pagetop', func: () => vim.scroll.scrollToTop() },
         { id: 'pagebottom', func: () => vim.scroll.scrollToBottom() },
-        { id: 'searchforward', pattern: /^search(f(orward)?)?$/, func: () => setTimeout(() => vim.search.start(true)) },
-        { id: 'searchbackward', pattern: /^searchb(ackward)?$/, func: () => setTimeout(() => vim.search.start(false)) },
+        { id: 'searchforward', pattern: /^search(f(orward)?)?$/, func: () => window.setTimeout(() => vim.search.start(true)) },
+        { id: 'searchbackward', pattern: /^searchb(ackward)?$/, func: () => window.setTimeout(() => vim.search.start(false)) },
         { id: 'findnext', func: () => vim.search.findNext() },
         { id: 'findprev', func: () => vim.search.findPrevious() },
         { id: 'zoom', description: ':zoom <number> - Set the zoom level to <number> percent.', minNargs: 1, func: (level) => vim.pdfViewer && (vim.pdfViewer.currentScale = 0.01 * +level) },
@@ -51,11 +51,11 @@ export const exCommands = (vim: VimBindings): ExCommand[] => {
         {
             id: 'yank',
             pattern: /^y(ank)?$/,
-            func: () => {
+            func: async () => {
                 const selection = vim.doc.getSelection();
                 if (selection) {
                     const text = selection.toString();
-                    if (text) navigator.clipboard.writeText(text);
+                    if (text) await navigator.clipboard.writeText(text);
                     vim.enterNormalMode();
                 }
             }
@@ -95,7 +95,7 @@ export const exCommands = (vim: VimBindings): ExCommand[] => {
             func: async (...splitPath) => {
                 const path = normalizePath(splitPath.join(' '));
                 const jsCode = await vim.app.vault.adapter.read(vim.app.metadataCache.getFirstLinkpathDest(path, '')?.path ?? path);
-                return await vim.evalUserScript(jsCode);
+                return vim.evalUserScript(jsCode);
             },
             description: `:jsfile <path> - Execute the javascript code in the file at <path> (relative to the vault root; can be just the filename if it's unique). It can be any plain text file with arbitrary file extension. The code will be evaluated in a context where "this" points to a "${UserScriptContext.name}" object.`
         },
@@ -130,7 +130,7 @@ export const exCommands = (vim: VimBindings): ExCommand[] => {
                     }
                 }));
                 // Avoid re-entering normal mode after command execution (see commandLineMode.submitCommand()
-                setTimeout(() => vim.enterHintMode());
+                window.setTimeout(() => vim.enterHintMode());
             }
         }
     ];

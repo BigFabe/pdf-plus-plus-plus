@@ -13,7 +13,8 @@ export class TemplateProcessor {
     }
 
     evalPart(expr: string) {
-        // avoid direct eval
+        // User-configured templates intentionally support JavaScript and Obsidian APIs.
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval -- Trusted local templates are an explicitly documented scripting feature, not a sandbox.
         const evaluated = new Function(...Object.keys(this.variables), `return ${expr};`)(...Object.values(this.variables));
         if (evaluated === undefined) {
             throw Error(`The expression "${expr}" cannot be evaluated.`);

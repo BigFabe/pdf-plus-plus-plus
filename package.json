@@ -1,7 +1,8 @@
 {
     "name": "obsidian-pdf-plus",
     "version": "0.40.31",
-    "description": "The most Obsidian-native PDF annotation tool ever.",
+    "description": "Annotate PDFs with linked notes, highlights, and portable Markdown annotations.",
+    "packageManager": "pnpm@10.34.9",
     "scripts": {
         "dev": "node esbuild.config.mjs",
         "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
@@ -17,12 +18,12 @@
         "@capacitor/app": "^7.0.2",
         "@capacitor/core": "^7.4.3",
         "@capacitor/device": "^7.0.2",
+        "@codemirror/view": "6.36.4",
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.34.0",
         "@types/node": "^24.3.0",
         "@typescript-eslint/eslint-plugin": "8.x",
         "@typescript-eslint/parser": "8.x",
-        "builtin-modules": "5.0.0",
         "electron": "^37.4.0",
         "esbuild": "0.25.9",
         "eslint": "^9.34.0",
