@@ -1564,7 +1564,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	createLinkTo(id: keyof PDFPlusSettings, name?: string) {
-		return this.containerEl.ownerDocument.createEl('a', '', (el) => {
+		return createFragment().createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollTo(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
@@ -1575,7 +1575,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	createLinkToHeading(id: string, name?: string) {
-		return this.containerEl.ownerDocument.createEl('a', '', (el) => {
+		return createFragment().createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollToHeading(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
