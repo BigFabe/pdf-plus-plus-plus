@@ -408,6 +408,25 @@ body.hide-pdf-toolbar-in-hover-editor .popover.hover-popover.hover-editor .view-
     opacity: 0.2;
 }
 
+/* Obsidian dims the entire text layer to 20%, including search highlights.
+   Keep search outlines opaque and use translucent fills to leave the PDF legible. */
+.pdf-container .textLayer:has(.highlight) {
+    opacity: 1;
+}
+
+.pdf-container .textLayer .highlight {
+    background-color: rgba(40, 157, 255, 0.16);
+    box-shadow: 0 0 0 1px rgba(40, 157, 255, 0.7);
+}
+
+.pdf-container .textLayer .highlight.selected {
+    background-color: rgba(40, 157, 255, 0.28);
+    padding: 0.12em 0.2em;
+    margin: -0.12em -0.2em;
+    border-radius: 3px;
+    box-shadow: 0 0 0 3px #289dff, 0 0 0 5px rgba(0, 0, 0, 0.65);
+}
+
 body:not(.pdf-plus-backlink-selection-underline) .pdf-plus-backlink-highlight-layer .pdf-plus-backlink.pdf-plus-backlink-selection {
     background-color: rgba(var(--pdf-plus-color-rgb, var(--text-highlight-bg-rgb)), var(--pdf-plus-highlight-opacity, 0.2));
     padding: var(--pdf-plus-highlight-padding-vertical-em, var(--pdf-plus-highlight-padding-default-em)) var(--pdf-plus-highlight-padding-horizontal-em, var(--pdf-plus-highlight-padding-default-em));
