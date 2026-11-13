@@ -10,9 +10,14 @@ Disposition of the automated findings at https://community.obsidian.md/plugins/p
 - Packaging and delivery: plugin description, direct CodeMirror dependency, replacement of `builtin-modules` with Node's built-in list and locked package-manager version. Lint/build CI and release-asset attestation configuration are prepared locally; publication of the workflow files is still pending.
 - Permissions and disclosures: explicit opt-in for automatic GitHub update checks, HTTP imports via `requestUrl`, trusted-code warnings beside template/vimrc settings, and documented vault, clipboard, network and desktop-process access.
 
+# Settings search
+
+Obsidian 1.13+ receives real setting definitions with names, descriptions, section aliases and setting keys. Indexing does not create controls, register UI handlers or open dialogs. Imperative row renderers preserve the existing controls, templates, navigation and save callbacks. Conditional visibility is represented in the definitions; structural changes call `update()` to rebuild the UI and search index.
+
+Older supported Obsidian versions keep the imperative `display()` fallback. Each rendered settings view owns its components and event handlers; rebuilding or closing the view releases them. Descriptions containing links retain their nodes and handlers when rendered again.
+
 # Findings retained with reasons
 
-- Settings search (Obsidian 1.13+): declarative `getSettingDefinitions()` replaces the legacy settings renderer when it returns definitions. The existing settings UI has not been rewritten for that API; the search-integration warning remains open. No empty stub was added to hide it.
 - Dynamic execution: JavaScript templates and Vim scripts are existing documented features. Their `Function` constructors remain with narrowly scoped lint explanations and prominent trust warnings; they are not sandboxed.
 - Desktop capabilities: AnyStyle and explicit Vim shell commands are intentional desktop-only features. OS inspection is desktop-only debug information. Node modules are dynamically imported after platform checks rather than removed.
 - Legacy APIs: `noticeEl` is retained only as a fallback for older supported Obsidian versions. `caretRangeFromPoint` is retained only when the standard API is absent. Explicit owner-window timer/document references remain where targeting that window is necessary.
