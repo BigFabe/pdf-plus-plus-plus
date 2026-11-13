@@ -18,7 +18,7 @@
         "@capacitor/app": "^7.0.2",
         "@capacitor/core": "^7.4.3",
         "@capacitor/device": "^7.0.2",
-        "@codemirror/view": "6.36.4",
+        "@codemirror/view": "6.43.13",
         "@eslint/eslintrc": "^3.3.1",
         "@eslint/js": "^9.34.0",
         "@types/node": "^24.3.0",

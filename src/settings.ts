@@ -1,4 +1,4 @@
-import { Component, DropdownComponent, Events, HexString, IconName, MarkdownRenderer, Modifier, Notice, ObsidianProtocolData, Platform, PluginSettingTab, Setting, TextAreaComponent, TextComponent, debounce, setIcon, setTooltip } from 'obsidian';
+import { Component, DropdownComponent, Events, HexString, IconName, MarkdownRenderer, Modifier, Notice, ObsidianProtocolData, Platform, PluginSettingTab, Setting, SettingDefinitionItem, TextAreaComponent, TextComponent, debounce, setIcon, setTooltip } from 'obsidian';
 
 import PDFPlus from 'main';
 import { ExtendedPaneType } from 'lib/workspace-lib';
@@ -9,6 +9,7 @@ import { ScrollMode, SidebarView, SpreadMode } from 'pdfjs-enums';
 import { Menu } from 'obsidian';
 import { PDFExternalLinkPostProcessor, PDFInternalLinkPostProcessor, PDFOutlineItemPostProcessor, PDFThumbnailItemPostProcessor } from 'post-process';
 import { BibliographyManager } from 'bib';
+import { PDFPlusSettingRow } from 'settings-row';
 
 
 const SELECTION_BACKLINK_VISUALIZE_STYLE = {
@@ -620,10 +621,13 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	headerContainerEl: HTMLElement;
 
 	events = new Events();
+	private rows: PDFPlusSettingRow[] = [];
+	private linkLabels: (() => void)[] = [];
+	private sectionAliases: string[] = [];
 
 	constructor(public plugin: PDFPlus) {
 		super(plugin.app, plugin);
-		this.component = new Component();
+		this.component = this.plugin.addChild(new Component());
 		this.items = {};
 		this.headings = new Map();
 		this.iconHeadings = new Map();
@@ -647,8 +651,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	addSetting(settingName?: keyof PDFPlusSettings) {
-		const item = new Setting(this.contentEl);
-		if (settingName) {
+		const row = new PDFPlusSettingRow();
+		row.aliases = [...this.sectionAliases, ...(settingName ? [settingName] : [])];
+		this.rows.push(row);
+		if (settingName) row.then((item) => {
 			this.items[settingName] = item;
 			this.component.registerDomEvent(item.settingEl, 'contextmenu', (evt) => {
 				evt.preventDefault();
@@ -675,12 +681,14 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					})
 					.showAtMouseEvent(evt);
 			});
-		}
-		return item;
+		});
+		return row;
 	}
 
 	addHeading(heading: string, id: string, icon?: IconName, processHeaderDom?: (dom: { headerEl: HTMLElement, iconEl: HTMLElement, titleEl: HTMLElement }) => void) {
-		const setting = this.addSetting()
+		if (icon) this.sectionAliases = [heading, id];
+		else this.sectionAliases = [...this.sectionAliases.slice(0, 2), heading, id];
+		const row = this.addSetting()
 			.setName(heading)
 			.setHeading()
 			.then((setting) => {
@@ -697,43 +705,43 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				}
 			});
 
-		this.headings.set(id, setting);
-		this.component.registerDomEvent(setting.settingEl, 'contextmenu', (evt) => {
-			evt.preventDefault();
-			new Menu()
-				.addItem((item) => {
-					item.setTitle('Copy link to this heading')
-						.setIcon('lucide-link')
-						.onClick(() => {
-							navigator.clipboard.writeText(`obsidian://pdf-plus?setting=heading:${id}`).catch(this.reportError);
-						});
-				})
-				.showAtMouseEvent(evt);
-		});
-
-		if (icon) {
-			this.headerContainerEl.createDiv('clickable-icon header', (headerEl) => {
-				const iconEl = headerEl.createDiv();
-				setIcon(iconEl, icon);
-
-				const titleEl = headerEl.createDiv('header-title');
-				titleEl.setText(heading);
-
-				setTooltip(headerEl, heading);
-
-				this.component.registerDomEvent(headerEl, 'click', (evt) => {
-					(setting.settingEl.previousElementSibling ?? setting.settingEl).scrollIntoView({ behavior: 'smooth' });
-					this.updateHeaderElClassOnScroll(evt);
-				});
-
-				processHeaderDom?.({ headerEl, iconEl, titleEl });
-
-				this.iconHeadings.set(id, setting);
-				this.headerEls.set(id, headerEl);
+		return row.then((setting) => {
+			this.headings.set(id, setting);
+			this.component.registerDomEvent(setting.settingEl, 'contextmenu', (evt) => {
+				evt.preventDefault();
+				new Menu()
+					.addItem((item) => {
+						item.setTitle('Copy link to this heading')
+							.setIcon('lucide-link')
+							.onClick(() => {
+								navigator.clipboard.writeText(`obsidian://pdf-plus?setting=heading:${id}`).catch(this.reportError);
+							});
+					})
+					.showAtMouseEvent(evt);
 			});
-		}
 
-		return setting;
+			if (icon) {
+				this.headerContainerEl.createDiv('clickable-icon header', (headerEl) => {
+					const iconEl = headerEl.createDiv();
+					setIcon(iconEl, icon);
+
+					const titleEl = headerEl.createDiv('header-title');
+					titleEl.setText(heading);
+
+					setTooltip(headerEl, heading);
+
+					this.component.registerDomEvent(headerEl, 'click', (evt) => {
+						(setting.settingEl.previousElementSibling ?? setting.settingEl).scrollIntoView({ behavior: 'smooth' });
+						this.updateHeaderElClassOnScroll(evt);
+					});
+
+					processHeaderDom?.({ headerEl, iconEl, titleEl });
+
+					this.iconHeadings.set(id, setting);
+					this.headerEls.set(id, headerEl);
+				});
+			}
+		});
 	}
 
 	updateHeaderElClass() {
@@ -768,7 +776,11 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 	scrollToSetting(setting: Setting, options?: { behavior: ScrollBehavior }) {
 		const el = setting.settingEl;
-		if (el) this.containerEl.scrollTo({ top: el.offsetTop - this.headerContainerEl.offsetHeight, ...options });
+		if (el) this.containerEl.scrollTo({
+			top: el.getBoundingClientRect().top - this.containerEl.getBoundingClientRect().top
+				+ this.containerEl.scrollTop - this.headerContainerEl.offsetHeight,
+			...options,
+		});
 	}
 
 	openFromObsidianUrl(params: ObsidianProtocolData) {
@@ -783,18 +795,22 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		return;
 	}
 
-	getVisibilityToggler(setting: Setting, condition: () => boolean) {
+	getVisibilityToggler(row: PDFPlusSettingRow, condition: () => boolean) {
+		row.visible = condition;
 		const toggleVisibility = () => {
-			setting.settingEl.toggle(condition());
+			row.rendered?.settingEl.toggle(condition());
+			this.refreshDomState?.();
 		};
-		toggleVisibility();
+		row.then(() => row.rendered?.settingEl.toggle(condition()));
 		return toggleVisibility;
 	}
 
-	showConditionally(setting: Setting | Setting[], condition: () => boolean) {
+	showConditionally(setting: PDFPlusSettingRow | PDFPlusSettingRow[], condition: () => boolean) {
 		const settings = Array.isArray(setting) ? setting : [setting];
-		const togglers = settings.map((setting) => this.getVisibilityToggler(setting, condition));
-		this.events.on('update', () => togglers.forEach((toggler) => toggler()));
+		for (const row of settings) {
+			this.getVisibilityToggler(row, condition);
+			row.then((setting) => this.component.registerEvent(this.events.on('update', () => setting.settingEl.toggle(condition()))));
+		}
 		return settings;
 	}
 
@@ -815,10 +831,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					}));
 				if (onBlurOrEnter) {
 					this.component.registerDomEvent(text.inputEl, 'blur', () => {
-						Promise.resolve(onBlurOrEnter(setting)).catch(this.reportError);
+						if (setting.rendered) Promise.resolve(onBlurOrEnter(setting.rendered)).catch(this.reportError);
 					});
 					this.component.registerDomEvent(text.inputEl, 'keypress', (evt) => {
-						if (evt.key === 'Enter') Promise.resolve(onBlurOrEnter(setting)).catch(this.reportError);
+						if (evt.key === 'Enter' && setting.rendered) Promise.resolve(onBlurOrEnter(setting.rendered)).catch(this.reportError);
 					});
 				}
 			});
@@ -881,8 +897,8 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			});
 	}
 
-	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: readonly string[], display?: (option: string) => string, extraOnChange?: (value: string) => void): Setting;
-	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: Record<string, string>, extraOnChange?: (value: string) => void): Setting;
+	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: readonly string[], display?: (option: string) => string, extraOnChange?: (value: string) => void): PDFPlusSettingRow;
+	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: Record<string, string>, extraOnChange?: (value: string) => void): PDFPlusSettingRow;
 	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, optionsOrLabels: readonly string[] | Record<string, string>, displayOrOnChange?: (value: string) => unknown, onChange?: (value: string) => unknown) {
 		const isOptionsArray = (value: typeof optionsOrLabels): value is readonly string[] => Array.isArray(value);
 		const options = isOptionsArray(optionsOrLabels) ? optionsOrLabels : Object.keys(optionsOrLabels);
@@ -909,7 +925,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			});
 	}
 
-	addIndexDropdownSetting(settingName: KeysOfType<PDFPlusSettings, number>, options: readonly string[], display?: (option: string) => string, extraOnChange?: (value: number) => void): Setting {
+	addIndexDropdownSetting(settingName: KeysOfType<PDFPlusSettings, number>, options: readonly string[], display?: (option: string) => string, extraOnChange?: (value: number) => void): PDFPlusSettingRow {
 		return this.addSetting(settingName)
 			.addDropdown((dropdown) => {
 				for (const option of options) {
@@ -970,42 +986,42 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 	addFileLocationSetting(
 		settingName: KeysOfType<PDFPlusSettings, NewFileLocation>,
-		postProcessDropdownSetting: (setting: Setting) => void,
+		postProcessDropdownSetting: (setting: PDFPlusSettingRow) => void,
 		folderPathSettingName: KeysOfType<PDFPlusSettings, string>,
-		postProcessFolderPathSetting: (setting: Setting) => void
+		postProcessFolderPathSetting: (setting: PDFPlusSettingRow) => void
 	) {
-		return [
-			this.addDropdownSetting(settingName, NEW_FILE_LOCATIONS, () => this.redisplay())
-				.then(postProcessDropdownSetting),
-			this.addSetting()
-				.addText((text) => {
-					text.setValue(this.plugin.settings[folderPathSettingName]);
-					text.inputEl.size = 30;
-					new FuzzyFolderSuggest(this.app, text.inputEl)
-						.onSelect(({ item: folder }) => {
-							// @ts-ignore
-							this.plugin.settings[folderPathSettingName] = folder.path;
-							this.plugin.saveSettings().catch(this.reportError);
-						});
-				})
-				.then((setting) => {
-					postProcessFolderPathSetting(setting);
-					if (this.plugin.settings[settingName] !== 'folder') {
-						setting.settingEl.hide();
-					}
-				})
-		];
+		const location = this.addDropdownSetting(settingName, NEW_FILE_LOCATIONS, () => this.redisplay());
+		postProcessDropdownSetting(location);
+		const folderPath = this.addSetting()
+			.addText((text) => {
+				text.setValue(this.plugin.settings[folderPathSettingName]);
+				text.inputEl.size = 30;
+				new FuzzyFolderSuggest(this.app, text.inputEl)
+					.onSelect(({ item: folder }) => {
+						// @ts-ignore
+						this.plugin.settings[folderPathSettingName] = folder.path;
+						this.plugin.saveSettings().catch(this.reportError);
+					});
+			})
+			.then((setting) => {
+				if (this.plugin.settings[settingName] !== 'folder') {
+					setting.settingEl.hide();
+				}
+			});
+		postProcessFolderPathSetting(folderPath);
+		folderPath.visible = () => this.plugin.settings[settingName] === 'folder';
+		return [location, folderPath];
 	}
 
-	addAttachmentLocationSetting(settingName: KeysOfType<PDFPlusSettings, string>, defaultSubfolder: string, postProcessSettings: (locationSetting: Setting, folderPathSetting: Setting, subfolderPathSetting: Setting) => void) {
+	addAttachmentLocationSetting(settingName: KeysOfType<PDFPlusSettings, string>, defaultSubfolder: string, postProcessSettings: (locationSetting: PDFPlusSettingRow, folderPathSetting: PDFPlusSettingRow, subfolderPathSetting: PDFPlusSettingRow) => void) {
 		let locationDropdown: DropdownComponent;
 		let folderPathText: TextComponent;
 		let subfolderPathText: TextComponent;
 
 		const toggleVisibility = () => {
 			const value = locationDropdown.getValue();
-			folderPathSetting.settingEl.toggle(value === 'folder');
-			subfolderPathSetting.settingEl.toggle(value === 'subfolder');
+			folderPathSetting.rendered?.settingEl.toggle(value === 'folder');
+			subfolderPathSetting.rendered?.settingEl.toggle(value === 'subfolder');
 		};
 		const getNewAttachmentFolderPath = () => {
 			const value = locationDropdown.getValue() as NewAttachmentLocation;
@@ -1089,8 +1105,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 		postProcessSettings(locationSetting, folderPathSetting, subfolderPathSetting);
 
-		setValues(this.plugin.settings[settingName]);
-		toggleVisibility();
+		subfolderPathSetting.then(() => {
+			setValues(this.plugin.settings[settingName]);
+			toggleVisibility();
+		});
 	}
 
 	addFundingButton() {
@@ -1416,7 +1434,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	addRequireModKeyOnHoverSetting(id: string) {
-		const display = this.app.workspace.hoverLinkSources[id].display;
+		const display = this.app.workspace.hoverLinkSources[id]?.display ?? this.plugin.manifest.name;
 		const required = this.plugin.requireModKeyForLinkHover(id);
 		return this.addSetting()
 			.setName(`Require ${modKey} key while hovering`)
@@ -1492,8 +1510,8 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				});
 		});
 
-		const dropdowns: DropdownComponent[] = [];
 		const remainingCategories: string[] = categories.slice();
+		let upperLevelCategory = '';
 
 		for (let i = 0; i < categories.length; i++) {
 			if (i > 0) {
@@ -1502,32 +1520,28 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					return;
 				}
 
-				const upperLevelCategory = dropdowns[i - 1].getValue();
 				if (!upperLevelCategory) return;
 
 				remainingCategories.remove(upperLevelCategory);
 			}
 
+			const options = remainingCategories.slice();
+			const storedValue = values[i] ?? '';
+			const currentValue = storedValue && !options.includes(storedValue) ? options[0] ?? '' : storedValue;
+			upperLevelCategory = currentValue;
+
 			this.addSetting()
-				.then((setting) => {
-					if (Platform.isDesktopApp) {
-						setting.setName(i === 0 ? 'Top-level menu' : i === 1 ? 'Submenu' : 'Subsubmenu');
-					}
-				})
+				.setName(Platform.isDesktopApp ? (i === 0 ? 'Top-level menu' : i === 1 ? 'Submenu' : 'Subsubmenu') : '')
 				.addDropdown((dropdown) => {
-					for (const category of remainingCategories) {
+					if (storedValue !== currentValue) {
+						const category = categories.find((category) => category === currentValue);
+						if (category) values[i] = category;
+					}
+					for (const category of options) {
 						dropdown.addOption(category, displayNames[category]);
 					}
 					if (i > 0) dropdown.addOption('', 'None');
 
-					let currentValue: string = values[i] ?? '';
-					if (currentValue && !remainingCategories.includes(currentValue)) {
-						if (remainingCategories[0]) {
-							// @ts-ignore
-							values[i] = remainingCategories[0];
-							currentValue = values[i];
-						}
-					}
 					dropdown.setValue(currentValue)
 						.onChange(this.handleAsync(async (value) => {
 							if (value) {
@@ -1540,7 +1554,6 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 							this.redisplay();
 						}));
-					dropdowns.push(dropdown);
 				})
 				.then((setting) => {
 					setting.settingEl.addClasses(['no-border', 'small-padding']);
@@ -1551,78 +1564,104 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	createLinkTo(id: keyof PDFPlusSettings, name?: string) {
-		return this.contentEl.createEl('a', '', (el) => {
+		return this.containerEl.ownerDocument.createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollTo(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
 			};
-			window.setTimeout(() => {
-				const setting = this.items[id];
-				if (!name && setting) {
-					name = '"' + setting.nameEl.textContent + '"';
-				}
-				el.setText(name ?? '');
-			});
+			el.setText(name ?? id);
+			this.linkLabels.push(() => el.setText(name ?? '"' + (this.items[id]?.nameEl.textContent ?? id) + '"'));
 		});
 	}
 
 	createLinkToHeading(id: string, name?: string) {
-		return this.contentEl.createEl('a', '', (el) => {
+		return this.containerEl.ownerDocument.createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollToHeading(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
 			};
-			window.setTimeout(() => {
-				const setting = this.headings.get(id);
-				if (!name && setting) {
-					name = '"' + setting.nameEl.textContent + '"';
-				}
-				el.setText(name ?? '');
-			});
+			el.setText(name ?? id);
+			this.linkLabels.push(() => el.setText(name ?? '"' + (this.headings.get(id)?.nameEl.textContent ?? id) + '"'));
 		});
 	}
 
-	/** Refresh the setting tab and then scroll back to the original position. */
+	/** Refresh both the controls and the native search index. */
 	redisplay() {
-		const scrollTop = this.contentEl.scrollTop;
-		this.display();
-		this.contentEl.scroll({ top: scrollTop });
-
+		const scrollTop = this.containerEl.scrollTop;
+		if (typeof this.update === 'function') this.update();
+		else this.display();
+		this.containerEl.scroll({ top: scrollTop });
 		this.events.trigger('update');
 	}
 
-	display(): void {
-		this.displaySettings().catch(this.reportError);
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		this.rows = [];
+		this.linkLabels = [];
+		this.sectionAliases = [];
+		this.buildSettings();
+		const rows = this.rows;
+		return [{
+			type: 'group',
+			cls: 'pdf-plus-settings-content content',
+			items: rows.map((row, index) => ({
+				...row.getDefinition(),
+				render: (setting) => {
+					if (index === 0) this.beginDisplay(setting.settingEl.closest<HTMLElement>('.pdf-plus-settings-content') ?? this.containerEl);
+					row.render(setting);
+					if (index === rows.length - 1) this.finishDisplay();
+					if (index === 0) {
+						const component = this.component;
+						return () => component.unload();
+					}
+				},
+			})),
+		}];
 	}
 
-	private async displaySettings(): Promise<void> {
-		// First of all, re-display the installer version modal that was shown in plugin.onload again if necessary,
-		// in case the user has accidentally closed it.
-		InstallerVersionModal.openIfNecessary(this.plugin);
+	/** Imperative fallback for Obsidian versions before 1.13. */
+	display(): void {
+		this.getSettingDefinitions();
+		this.containerEl.empty();
+		this.beginDisplay(this.containerEl.createDiv('content'));
+		for (const row of this.rows) row.render(new Setting(this.contentEl));
+		this.finishDisplay();
+	}
 
-		this.plugin.checkDeprecatedSettings();
-
-
-		// Setting tab rendering starts here
-
-		this.headerContainerEl.empty();
-		this.contentEl.empty();
-		this.promises = [];
+	private beginDisplay(contentEl: HTMLElement) {
+		this.plugin.removeChild(this.component);
+		this.component = this.plugin.addChild(new Component());
 		this.component.load();
-
-
-		// Show which section is currently being displayed by highlighting the corresponding icon in the header.
-		window.setTimeout(() => this.updateHeaderElClass());
+		this.items = {};
+		this.headings.clear();
+		this.iconHeadings.clear();
+		this.headerEls.clear();
+		this.events = new Events();
+		this.component.registerEvent(this.events.on('update', () => this.refreshDomState?.()));
+		this.promises = [];
+		this.contentEl = contentEl;
+		this.containerEl.querySelector(':scope > .header-container')?.remove();
+		this.headerContainerEl = this.containerEl.createDiv({ cls: 'header-container', prepend: true });
+		InstallerVersionModal.openIfNecessary(this.plugin);
+		this.plugin.checkDeprecatedSettings();
 		for (const eventType of ['wheel', 'touchmove'] as const) {
-			this.component.registerDomEvent(
-				this.contentEl, eventType,
-				debounce(() => this.updateHeaderElClass(), 100),
-				{ passive: true }
-			);
+			this.component.registerDomEvent(this.containerEl, eventType,
+				debounce(() => this.updateHeaderElClass(), 100), { passive: true });
 		}
+	}
 
+	private finishDisplay() {
+		const component = this.component;
+		Promise.all(this.promises).then(() => {
+			if (this.component !== component || !this.contentEl.isConnected) return;
+			for (const updateLabel of this.linkLabels) updateLabel();
+			this.updateHeaderElClass();
+		}).catch(this.reportError);
+	}
 
-		this.contentEl.createDiv('top-note', this.handleAsync(async (el: HTMLDivElement) => {
+	private buildSettings(): void {
+		this.addSetting().then(this.handleAsync(async (setting: Setting) => {
+			setting.settingEl.addClass('top-note');
+			const el = setting.infoEl;
 			await this._renderMarkdown([
 				'> [!TIP]',
 				'> - You can easily navigate through the settings by clicking the icons in the header above.',
@@ -2031,7 +2070,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				};
 
 				const sections = this.plugin.settings.contextMenuConfig;
-				const sectionSettings: Setting[] = [];
+				const sectionSettings: PDFPlusSettingRow[] = [];
 				for (let i = 0; i < sections.length; i++) {
 					const section = sections[i];
 					const name = itemOrSectionName[section.id];
@@ -2567,6 +2606,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.addHeading('PDF internal links', 'pdf-link', 'link')
 			.setDesc('Make it easier to work with internal links embedded in PDF files.');
 		this.addToggleSetting('clickPDFInternalLinkWithModifierKey')
+			.setName('Open PDF internal links with modifier keys')
 			.then((setting) => {
 				this.renderMarkdown(
 					'Use [modifier keys](https://help.obsidian.md/User+interface/Tabs#Open+a+link) to open PDF internal links in various ways',
@@ -2704,6 +2744,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.addHeading('PDF outline (table of contents)', 'outline', 'lucide-list')
 			.setDesc('Power up the outline view of the built-in PDF viewer: add, rename, or delete items via the right-click menu and the "Add to outline" command, drag & drop items to insert a section link, and more.');
 		this.addToggleSetting('clickOutlineItemWithModifierKey')
+			.setName('Open outline items with modifier keys')
 			.then((setting) => {
 				this.renderMarkdown(
 					'Click PDF outline with [modifier keys](https://help.obsidian.md/User+interface/Tabs#Open+a+link) to open target section in various ways',
@@ -2782,6 +2823,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 		this.addHeading('PDF thumbnails', 'thumbnail', 'lucide-gallery-thumbnails');
 		this.addToggleSetting('clickThumbnailWithModifierKey')
+			.setName('Open PDF thumbnails with modifier keys')
 			.then((setting) => {
 				this.renderMarkdown(
 					'Click PDF thumbnails with [modifier keys](https://help.obsidian.md/User+interface/Tabs#Open+a+link) to open target page in various ways',
@@ -3423,7 +3465,6 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.addFundingButton();
 
 
-		await Promise.all(this.promises);
 	}
 
 	hide(): void {
@@ -3431,6 +3472,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	private async saveOnHide() {
+		const component = this.component;
 		this.plugin.settings.colors = Object.fromEntries(
 			Object.entries(this.plugin.settings.colors).filter(([name, color]) => name && isHexString(color))
 		);
@@ -3456,8 +3498,8 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			await this.plugin.saveSettings();
 			this.plugin.loadStyle();
 		} finally {
-			this.promises = [];
-			this.component.unload();
+			component.unload();
+			if (this.component === component) this.promises = [];
 		}
 	}
 }
