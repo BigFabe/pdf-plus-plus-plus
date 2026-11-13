@@ -329,8 +329,8 @@ export default class PDFPlus extends Plugin {
 					el.append('PDF++: ');
 					setMessage(el, linkEl);
 				}));
-			const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
-			(notice.containerEl ?? messageEl).addClass('pdf-plus-deprecated-setting-notice');
+			const messageEl = notice.messageEl;
+			notice.containerEl.addClass('pdf-plus-deprecated-setting-notice');
 			messageEl.setCssStyles({
 				color: 'var(--text-warning)',
 			});
@@ -430,8 +430,8 @@ export default class PDFPlus extends Plugin {
 				)),
 				0
 			);
-			const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
-			(notice.containerEl ?? messageEl).addClass('pdf-plus-deprecated-setting-notice');
+			const messageEl = notice.messageEl;
+			notice.containerEl.addClass('pdf-plus-deprecated-setting-notice');
 			messageEl.setCssStyles({
 				color: 'var(--text-warning)',
 			});
@@ -705,6 +705,7 @@ export default class PDFPlus extends Plugin {
 			} else if (this.settings.defaultColor) {
 				embed.containerEl.dataset.highlightColor = this.settings.defaultColor.toLowerCase();
 			}
+			this.domManager.applyHighlightColor(embed.containerEl);
 			return embed;
 		});
 	}
@@ -807,7 +808,7 @@ export default class PDFPlus extends Plugin {
 		const eventRef = events.on(evt, (...args: unknown[]) => {
 			events.offref(eventRef);
 			// The overload tuple guarantees the callback matches this event's payload.
-			const handler = callback as (...data: unknown[]) => unknown;
+			const handler = callback;
 			Promise.resolve(handler.apply(ctx, args)).catch((error: unknown) => {
 				console.error(`${this.manifest.name}: One-time event handler failed.`, error);
 			});

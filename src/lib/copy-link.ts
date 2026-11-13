@@ -610,7 +610,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
             // However, for commands such as "Quick switcher: Open quick switcher", the file-open will be triggered after a long time.
             const timeout = window.setTimeout(() => {
                 const notice = new Notice(`${this.plugin.manifest.name}: Could not find the auto-paste target markdown file within ${this.settings.autoPasteTargetDialogTimeoutSec} seconds.`);
-                const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
+                const messageEl = notice.messageEl;
                 messageEl.appendText(' Click ');
                 messageEl.createEl('a', { text: 'here' }, (anchorEl) => {
                     anchorEl.addEventListener('click', () => {

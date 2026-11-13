@@ -40,7 +40,7 @@ export class PDFPageDeleteModal extends PDFPlusModal {
             .addButton((button) => {
                 button
                     .setButtonText('Delete')
-                    .setWarning()
+                    .setDestructive()
                     .onClick(() => {
                         this.#resolve(true);
                         this.close();

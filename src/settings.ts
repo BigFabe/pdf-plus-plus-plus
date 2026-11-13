@@ -799,7 +799,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		row.visible = condition;
 		const toggleVisibility = () => {
 			row.rendered?.settingEl.toggle(condition());
-			this.refreshDomState?.();
+			this.refreshDomState();
 		};
 		row.then(() => row.rendered?.settingEl.toggle(condition()));
 		return toggleVisibility;
@@ -970,7 +970,6 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.addSlider((slider) => {
 				slider.setLimits(min, max, step)
 					.setValue(this.plugin.settings[settingName])
-					.setDynamicTooltip()
 					.onChange(this.handleAsync(async (value) => {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
@@ -1588,8 +1587,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	/** Refresh both the controls and the native search index. */
 	redisplay() {
 		const scrollTop = this.containerEl.scrollTop;
-		if (typeof this.update === 'function') this.update();
-		else this.display();
+		this.update();
 		this.containerEl.scroll({ top: scrollTop });
 		this.events.trigger('update');
 	}
@@ -1618,15 +1616,6 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		}];
 	}
 
-	/** Imperative fallback for Obsidian versions before 1.13. */
-	display(): void {
-		this.getSettingDefinitions();
-		this.containerEl.empty();
-		this.beginDisplay(this.containerEl.createDiv('content'));
-		for (const row of this.rows) row.render(new Setting(this.contentEl));
-		this.finishDisplay();
-	}
-
 	private beginDisplay(contentEl: HTMLElement) {
 		this.plugin.removeChild(this.component);
 		this.component = this.plugin.addChild(new Component());
@@ -1636,7 +1625,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.iconHeadings.clear();
 		this.headerEls.clear();
 		this.events = new Events();
-		this.component.registerEvent(this.events.on('update', () => this.refreshDomState?.()));
+		this.component.registerEvent(this.events.on('update', () => this.refreshDomState()));
 		this.promises = [];
 		this.contentEl = contentEl;
 		this.containerEl.querySelector(':scope > .header-container')?.remove();
@@ -1989,7 +1978,6 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				.setName('Custom zoom level (%)')
 				.addSlider((slider) => {
 					slider.setLimits(10, 400, 5)
-						.setDynamicTooltip()
 						.setValue(this.plugin.settings.defaultZoomValue.startsWith('page-') ? 100 : parseInt(this.plugin.settings.defaultZoomValue))
 						.onChange(this.handleAsync(async (value) => {
 							this.plugin.settings.defaultZoomValue = '' + value;

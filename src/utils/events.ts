@@ -240,7 +240,7 @@ export function selectDoubleClickedWord(evt: MouseEvent) {
         range.setStart(pos.offsetNode, pos.offset);
         range.collapse(true);
     } else if (doc.caretRangeFromPoint) {
-        // Older Electron/WebKit versions only provide the legacy caret API.
+        // iOS/WebView engine support is independent of the minimum Obsidian app version.
         range = doc.caretRangeFromPoint(evt.clientX, evt.clientY);
     }
 

@@ -1050,8 +1050,8 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         );
         // Style settings related to PDF++
         const styleSettings = getStyleSettings(this.app);
-        // CSS style sheet of the PDF++ dom manager
-        const styleSheet = this.plugin.domManager.styleEl.textContent;
+        // Dynamic CSS variables; all style rules live in styles.css.
+        const styleSheet = this.plugin.domManager.cssVariables;
 
         // Text to be pasted into GitHub issue
         let text = '#### Obsidian debug info\n\n';

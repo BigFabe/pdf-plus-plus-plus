@@ -113,7 +113,8 @@ export class ColorPalette extends PDFPlusComponent {
         });
         this.itemEls.push(itemEl);
 
-        itemEl.createDiv(ColorPalette.CLS + '-item-inner');
+        itemEl.createDiv(ColorPalette.CLS + '-item-inner')
+            .style.setProperty('--pdf-plus-swatch-color', color);
         this.setTooltipToActionItem(itemEl, name);
 
         // Listen to pointerup, not click, to prevent the selection from being cleared before the handler is called on mobile devices.
