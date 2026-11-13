@@ -75,7 +75,7 @@ export function getSelectedItemsRecursive(rootMenu: Menu) {
  * @param timeout Defaults to 250ms (as of Obsidian v1.5.11).
  */
 export function fixOpenSubmenu(menu: Menu, timeout?: number) {
-    menu.openSubmenu = function (item: MenuItem) {
+    menu.openSubmenu = function (this: Menu, item: MenuItem) {
         if (this.parentMenu) {
             this.closeSubmenu();
         }

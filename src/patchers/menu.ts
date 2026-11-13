@@ -7,7 +7,7 @@ import PDFPlus from 'main';
 export const patchMenu = (plugin: PDFPlus) => {
     plugin.register(around(Menu.prototype, {
         showAtPosition(old) {
-            return function (this: Menu, ...args: any[]) {
+            return function (this: Menu, ...args: Parameters<Menu['showAtPosition']>) {
                 if (plugin.settings.hoverableDropdownMenuInToolbar && this.parentEl?.closest('div.pdf-toolbar')) {
                     this.setUseNativeMenu(false);
                 }
@@ -16,7 +16,7 @@ export const patchMenu = (plugin: PDFPlus) => {
             };
         },
         hide(old) {
-            return function (this: Menu, ...args: any[]) {
+            return function (this: Menu, ...args: Parameters<Menu['hide']>) {
                 plugin.shownMenus.delete(this);
                 return old.call(this, ...args);
             };

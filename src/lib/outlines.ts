@@ -86,7 +86,7 @@ export class PDFOutlines {
         return leaves;
     }
 
-    iter(callbacks: { enter?: (item: PDFOutlineItem) => any, leave?: (item: PDFOutlineItem) => any }) {
+    iter(callbacks: { enter?: (item: PDFOutlineItem) => void, leave?: (item: PDFOutlineItem) => void }) {
         const iter = (item: PDFOutlineItem) => {
             callbacks.enter?.(item);
             item.iterChildren(iter);
@@ -96,7 +96,7 @@ export class PDFOutlines {
         if (this.root) iter(this.root);
     }
 
-    async iterAsync(callbacks: { enter?: (item: PDFOutlineItem) => Promise<any>, leave?: (item: PDFOutlineItem) => Promise<any> }) {
+    async iterAsync(callbacks: { enter?: (item: PDFOutlineItem) => Promise<unknown>, leave?: (item: PDFOutlineItem) => Promise<unknown> }) {
         const iter = async (item: PDFOutlineItem) => {
             await callbacks.enter?.(item);
             await item.iterChildrenAsync(iter);
@@ -462,7 +462,7 @@ export class PDFOutlineItem {
         }
     }
 
-    iterChildren(fn: (item: PDFOutlineItem) => any) {
+    iterChildren(fn: (item: PDFOutlineItem) => void) {
         let item: PDFOutlineItem | null = this.firstChild;
         while (item) {
             fn(item);
@@ -470,7 +470,7 @@ export class PDFOutlineItem {
         }
     }
 
-    async iterChildrenAsync(fn: (item: PDFOutlineItem) => Promise<any>) {
+    async iterChildrenAsync(fn: (item: PDFOutlineItem) => Promise<unknown>) {
         let item: PDFOutlineItem | null = this.firstChild;
         while (item) {
             await fn(item);
@@ -478,7 +478,7 @@ export class PDFOutlineItem {
         }
     }
 
-    iterAncestors(fn: (item: PDFOutlineItem) => any, includeSelf = false) {
+    iterAncestors(fn: (item: PDFOutlineItem) => void, includeSelf = false) {
         if (includeSelf) fn(this);
 
         let parent = this.parent;

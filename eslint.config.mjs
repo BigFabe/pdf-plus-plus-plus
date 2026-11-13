@@ -87,9 +87,13 @@ export default [{
         "no-extra-semi": "error",
         "no-unexpected-multiline": "error",
         "no-unreachable": "error",
-        // PDF.js/Obsidian private APIs and optional plugin APIs lack complete public types.
-        // Keep their explicit escape hatches rather than inventing inaccurate signatures.
-        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-explicit-any": "error",
+        "@typescript-eslint/no-unsafe-return": "error",
+        "@typescript-eslint/no-unsafe-assignment": "error",
+        "@typescript-eslint/no-unsafe-argument": "error",
+        "@typescript-eslint/no-unsafe-member-access": "error",
+        "@typescript-eslint/no-unsafe-call": "error",
+        "@typescript-eslint/no-unsafe-enum-comparison": "error",
         "@typescript-eslint/no-unused-expressions": "error",
     },
 }];

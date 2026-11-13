@@ -94,7 +94,7 @@ export class PdfLibIO extends PDFPlusLibSubmodule implements IPdfIo {
         return await fn(pdfDoc);
     }
 
-    addAnnotation(page: PDFPage, annotDict: Record<string, any>): PDFRef {
+    addAnnotation(page: PDFPage, annotDict: NonNullable<Parameters<PDFDocument['context']['stream']>[1]>): PDFRef {
         const context = page.doc.context;
         const ref = context.register(
             context.obj({
@@ -138,7 +138,7 @@ export class PdfLibIO extends PDFPlusLibSubmodule implements IPdfIo {
         return null;
     }
 
-    async setAnnotationColor(file: TFile, pageNumber: number, id: string, rgb: RGB): Promise<any> {
+    async setAnnotationColor(file: TFile, pageNumber: number, id: string, rgb: RGB): Promise<void> {
         await this.processAnnotation(file, pageNumber, id, async (annot) => {
             this.setColorToAnnotation(annot, rgb);
         });
@@ -152,7 +152,7 @@ export class PdfLibIO extends PDFPlusLibSubmodule implements IPdfIo {
         return null;
     }
 
-    async setAnnotationOpacity(file: TFile, pageNumber: number, id: string, opacity: number): Promise<any> {
+    async setAnnotationOpacity(file: TFile, pageNumber: number, id: string, opacity: number): Promise<void> {
         await this.processAnnotation(file, pageNumber, id, async (annot) => {
             this.setOpacityToAnnotation(annot, opacity);
         });
@@ -175,7 +175,7 @@ export class PdfLibIO extends PDFPlusLibSubmodule implements IPdfIo {
         });
     }
 
-    async processAnnotation(file: TFile, pageNumber: number, id: string, fn: (annot: PDFDict) => any): Promise<void> {
+    async processAnnotation(file: TFile, pageNumber: number, id: string, fn: (annot: PDFDict) => void | Promise<void>): Promise<void> {
         return await this.process(file, async (pdfDoc) => {
             const page = pdfDoc.getPage(pageNumber - 1);
             const ref = this.findAnnotationRef(page, id);

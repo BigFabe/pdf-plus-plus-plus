@@ -20,7 +20,7 @@ export class PDFPageDeleteModal extends PDFPlusModal {
         });
     }
 
-    then(callback: () => any) {
+    then(callback: () => unknown) {
         this.#promise.then((value) => {
             if (value) return callback();
         }).catch(this.reportError);
@@ -117,7 +117,7 @@ export class PDFComposerModal extends PDFPlusModal {
         return this;
     }
 
-    then(callback: (keepLabels: boolean, inPlace: boolean) => any) {
+    then(callback: (keepLabels: boolean, inPlace: boolean) => unknown) {
         this.#promise.then((options) => {
             if (options) {
                 const { pageLabelUpdateMethod, inPlace } = options;
@@ -197,7 +197,7 @@ export class PDFCreateModal extends PDFPlusModal {
     pageSize: keyof typeof PageSizes = 'A4';
     orientation: 'portrait' | 'landscape' = 'portrait';
 
-    next: ((doc: PDFDocument) => any)[] = [];
+    next: ((doc: PDFDocument) => unknown)[] = [];
 
     askOptions() {
         this.open();
@@ -265,7 +265,7 @@ export class PDFCreateModal extends PDFPlusModal {
         return new Setting(this.contentEl);
     }
 
-    then(callback: (doc: PDFDocument) => any) {
+    then(callback: (doc: PDFDocument) => unknown) {
         this.next.push(callback);
         return this;
     }

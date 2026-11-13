@@ -7,7 +7,7 @@ const isTargetTypable = (evt: KeyboardEvent) => {
     return isTargetHTMLElement(evt, evt.target) && isTypable(evt.target);
 };
 
-export type VimCommand = (n?: number) => any;
+export type VimCommand = (n?: number) => unknown;
 export type VimKeymap = { keys: string, func: VimCommand };
 
 export class VimScope extends Scope {
@@ -16,7 +16,7 @@ export class VimScope extends Scope {
     currentKeys: string = '';
     searchFrom = 0;
     searchTo = -1;
-    onEscapeCallbacks: ((isRealEscape: boolean) => any)[] = [];
+    onEscapeCallbacks: ((isRealEscape: boolean) => unknown)[] = [];
     escapeAliases: string[] = [];
     typableModes: string[] = [];
 
@@ -116,7 +116,7 @@ export class VimScope extends Scope {
         this.searchTo = -1;
     }
 
-    onEscape(callback: (isRealEscape: boolean) => any) {
+    onEscape(callback: (isRealEscape: boolean) => unknown) {
         this.onEscapeCallbacks.push(callback);
     }
 
@@ -208,9 +208,10 @@ export class VimScope extends Scope {
                 return `<S-${result ?? info.key}>`;
             case 'Ctrl':
                 return `<C-${result ?? info.key}>`;
-            case 'Alt':
-                // @ts-ignore
-                return `<M-${VimScope.canonicalizeSpecialKey(info.vkey) ?? info.vkey.toLowerCase()}>`;
+            case 'Alt': {
+                const vkey = 'vkey' in info && typeof info.vkey === 'string' ? info.vkey : info.key;
+                return `<M-${VimScope.canonicalizeSpecialKey(vkey) ?? vkey.toLowerCase()}>`;
+            }
             case 'Meta':
                 return `<M-${result ?? info.key}>`;
             default:

@@ -601,7 +601,7 @@ export const DEFAULT_SETTINGS: PDFPlusSettings = {
 
 
 export function isPDFPlusSettingsKey(key: string): key is keyof PDFPlusSettings {
-	return Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key);
+	return Object.keys(DEFAULT_SETTINGS).includes(key);
 }
 
 
@@ -614,7 +614,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	headings: Map<string, Setting>;
 	iconHeadings: Map<string, Setting>;
 	headerEls: Map<string, HTMLElement>;
-	promises: Promise<any>[];
+	promises: Promise<unknown>[];
 
 	contentEl: HTMLElement;
 	headerContainerEl: HTMLElement;
@@ -687,11 +687,10 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 				if (icon) {
 					const parentEl = setting.settingEl.parentElement;
 					if (parentEl) {
-						parentEl.insertBefore(createDiv('spacer'), setting.settingEl);
+						parentEl.insertBefore(parentEl.createDiv('spacer'), setting.settingEl);
 					}
 
-					const iconEl = createDiv();
-					setting.settingEl.prepend(iconEl);
+					const iconEl = setting.settingEl.createDiv({ prepend: true });
 					setIcon(iconEl, icon);
 
 					setting.settingEl.addClass('pdf-plus-setting-heading');
@@ -799,7 +798,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		return settings;
 	}
 
-	addTextSetting(settingName: KeysOfType<PDFPlusSettings, string>, placeholder?: string, onBlurOrEnter?: (setting: Setting) => any) {
+	addTextSetting(settingName: KeysOfType<PDFPlusSettings, string>, placeholder?: string, onBlurOrEnter?: (setting: Setting) => unknown) {
 		const setting = this.addSetting(settingName)
 			.addText((text) => {
 				text.setValue(this.plugin.settings[settingName])
@@ -826,7 +825,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		return setting;
 	}
 
-	addTextAreaSetting(settingName: KeysOfType<PDFPlusSettings, string>, placeholder?: string, onBlur?: () => any) {
+	addTextAreaSetting(settingName: KeysOfType<PDFPlusSettings, string>, placeholder?: string, onBlur?: () => unknown) {
 		return this.addSetting(settingName)
 			.addTextArea((text) => {
 				text.setValue(this.plugin.settings[settingName])
@@ -884,19 +883,16 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: readonly string[], display?: (option: string) => string, extraOnChange?: (value: string) => void): Setting;
 	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, options: Record<string, string>, extraOnChange?: (value: string) => void): Setting;
-	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, ...args: any[]) {
-		let options: string[] = [];
-		let display = (optionValue: string) => optionValue;
-		let extraOnChange: (value: string) => void | Promise<void> = () => { };
-		if (Array.isArray(args[0])) {
-			options = args[0];
-			if (typeof args[1] === 'function') display = args[1];
-			if (typeof args[2] === 'function') extraOnChange = args[2];
-		} else {
-			options = Object.keys(args[0]);
-			display = (optionValue: string) => args[0][optionValue];
-			if (typeof args[1] === 'function') extraOnChange = args[1];
-		}
+	addDropdownSetting(settingName: KeysOfType<PDFPlusSettings, string>, optionsOrLabels: readonly string[] | Record<string, string>, displayOrOnChange?: (value: string) => unknown, onChange?: (value: string) => unknown) {
+		const isOptionsArray = (value: typeof optionsOrLabels): value is readonly string[] => Array.isArray(value);
+		const options = isOptionsArray(optionsOrLabels) ? optionsOrLabels : Object.keys(optionsOrLabels);
+		const display = isOptionsArray(optionsOrLabels)
+			? (value: string) => {
+				const label = displayOrOnChange?.(value);
+				return typeof label === 'string' ? label : value;
+			}
+			: (value: string) => optionsOrLabels[value];
+		const extraOnChange = isOptionsArray(optionsOrLabels) ? onChange : displayOrOnChange;
 		return this.addSetting(settingName)
 			.addDropdown((dropdown) => {
 				for (const option of options) {
@@ -908,7 +904,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						// @ts-ignore
 						this.plugin.settings[settingName] = value;
 						await this.plugin.saveSettings();
-						await extraOnChange(value);
+						await extraOnChange?.(value);
 					}));
 			});
 	}
@@ -974,9 +970,9 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 	addFileLocationSetting(
 		settingName: KeysOfType<PDFPlusSettings, NewFileLocation>,
-		postProcessDropdownSetting: (setting: Setting) => any,
+		postProcessDropdownSetting: (setting: Setting) => void,
 		folderPathSettingName: KeysOfType<PDFPlusSettings, string>,
-		postProcessFolderPathSetting: (setting: Setting) => any
+		postProcessFolderPathSetting: (setting: Setting) => void
 	) {
 		return [
 			this.addDropdownSetting(settingName, NEW_FILE_LOCATIONS, () => this.redisplay())
@@ -1001,7 +997,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		];
 	}
 
-	addAttachmentLocationSetting(settingName: KeysOfType<PDFPlusSettings, string>, defaultSubfolder: string, postProcessSettings: (locationSetting: Setting, folderPathSetting: Setting, subfolderPathSetting: Setting) => any) {
+	addAttachmentLocationSetting(settingName: KeysOfType<PDFPlusSettings, string>, defaultSubfolder: string, postProcessSettings: (locationSetting: Setting, folderPathSetting: Setting, subfolderPathSetting: Setting) => void) {
 		let locationDropdown: DropdownComponent;
 		let folderPathText: TextComponent;
 		let subfolderPathText: TextComponent;
@@ -1555,7 +1551,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	createLinkTo(id: keyof PDFPlusSettings, name?: string) {
-		return createEl('a', '', (el) => {
+		return this.contentEl.createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollTo(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
@@ -1571,7 +1567,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	createLinkToHeading(id: string, name?: string) {
-		return createEl('a', '', (el) => {
+		return this.contentEl.createEl('a', '', (el) => {
 			el.onclick = (evt) => {
 				this.scrollToHeading(id, { behavior: 'smooth' });
 				this.updateHeaderElClassOnScroll(evt);
@@ -1741,7 +1737,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 						});
 				})
 				.then((setting) => {
-					setting.controlEl.prepend(createEl('span', { text: displayName }));
+					setting.controlEl.createEl('span', { text: displayName, prepend: true });
 					setting.settingEl.addClasses(['no-border', 'ignore-split-setting']);
 				});
 		}
@@ -3363,12 +3359,14 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.setName('Show status in PDF toolbar')
 			.setDesc('For example, when you copy a link to a text selection in a PDF file, the status "Link copied" will be displayed in the PDF toolbar.');
 		this.addFileLocationSetting(
-			'newPDFLocation', (setting) => setting
-				.setName('Default location for new PDFs')
-				.setDesc('The "Create new PDF" command will create a new PDF file in the location specified here.'),
-			'newPDFFolderPath', (setting) => setting
-				.setName('Folder to create new PDFs in')
-				.setDesc('Newly created PDFs will appear under this folder.')
+			'newPDFLocation', (setting) => {
+				setting.setName('Default location for new PDFs')
+					.setDesc('The "Create new PDF" command will create a new PDF file in the location specified here.');
+			},
+			'newPDFFolderPath', (setting) => {
+				setting.setName('Folder to create new PDFs in')
+					.setDesc('Newly created PDFs will appear under this folder.');
+			}
 		);
 		this.addToggleSetting('hideReplyAnnotation')
 			.setName('Hide reply annotations')

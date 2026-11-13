@@ -11,7 +11,7 @@ export const patchWorkspace = (plugin: PDFPlus) => {
 
     plugin.register(around(Workspace.prototype, {
         openLinkText(old) {
-            return function (linktext: string, sourcePath: string, newLeaf?: PaneType | boolean, openViewState?: OpenViewState) {
+            return function (this: Workspace, linktext: string, sourcePath: string, newLeaf?: PaneType | boolean, openViewState?: OpenViewState) {
                 if ((plugin.settings.openPDFWithDefaultApp || plugin.settings.singleTabForSinglePDF || plugin.settings.openLinkNextToExistingPDFTab || plugin.settings.paneTypeForFirstPDFLeaf) && !newLeaf) { // respect `newLeaf` when it's not `false`
                     const { path } = parseLinktext(linktext);
                     const file = app.metadataCache.getFirstLinkpathDest(path, sourcePath);
@@ -20,7 +20,7 @@ export const patchWorkspace = (plugin: PDFPlus) => {
 
                         if (Platform.isDesktopApp && plugin.settings.openPDFWithDefaultApp) {
                             if (plugin.settings.openPDFWithDefaultAppAndObsidian && plugin.settings.syncWithDefaultApp) {
-                                return; // will be handled by the 'active-leaf-change' event handler
+                                return Promise.resolve(); // will be handled by the 'active-leaf-change' event handler
                             }
                             const promise = app.openWithDefaultApp(file.path);
                             if (plugin.settings.focusObsidianAfterOpenPDFWithDefaultApp) {

@@ -177,11 +177,9 @@ export class PDFPageTextStructureParser {
 
     _getMergedRangeOfItems(items: TextContentItem[], direction: 'horizontal' | 'vertical' = 'vertical') {
         if (items.length === 0) return null;
-        const ranges: { from: number, to: number }[] = items.map(
-            direction === 'vertical'
-                ? this._getVerticalRangeOfItem.bind(this)
-                : this._getHorizontalRangeOfItem.bind(this)
-        );
+        const ranges = items.map((item) => direction === 'vertical'
+            ? this._getVerticalRangeOfItem(item)
+            : this._getHorizontalRangeOfItem(item));
         const from = Math.min(...ranges.map((range) => range.from));
         const to = Math.max(...ranges.map((range) => range.to));
         return { from, to };

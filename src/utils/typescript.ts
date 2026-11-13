@@ -2,6 +2,10 @@
 // Typescript utilities //
 //////////////////////////
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 // Inspired by https://stackoverflow.com/a/50851710/13613783
 export type KeysOfType<Obj, Type> = NonNullable<{ [k in keyof Obj]: Obj[k] extends Type ? k : never }[keyof Obj]>;
 
@@ -28,8 +32,19 @@ type _Params<T> = T extends {
     (...args: infer A7): unknown;
     (...args: infer A8): unknown;
     (...args: infer A9): unknown;
+    (...args: infer A10): unknown;
+    (...args: infer A11): unknown;
+    (...args: infer A12): unknown;
+    (...args: infer A13): unknown;
+    (...args: infer A14): unknown;
+    (...args: infer A15): unknown;
+    (...args: infer A16): unknown;
+    (...args: infer A17): unknown;
+    (...args: infer A18): unknown;
+    (...args: infer A19): unknown;
+    (...args: infer A20): unknown;
 }
-    ? [A1, A2, A3, A4, A5, A6, A7, A8, A9]
+    ? [A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16, A17, A18, A19, A20]
     : never;
 
 // type T1 = filterUnknowns<[unknown[], string[]]>; // [string[]]

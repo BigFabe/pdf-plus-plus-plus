@@ -38,25 +38,25 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
         this.hoverEditor = new HoverEditorLib(...args);
     }
 
-    iteratePDFViews(callback: (view: PDFView) => any): void {
+    iteratePDFViews(callback: (view: PDFView) => void): void {
         this.app.workspace.iterateAllLeaves((leaf) => {
             const view = leaf.view;
             if (this.lib.isPDFView(view)) callback(view);
         });
     }
 
-    iterateBacklinkViews(cb: (view: BacklinkView) => any): void {
+    iterateBacklinkViews(cb: (view: BacklinkView) => void): void {
         this.app.workspace.getLeavesOfType('backlink').forEach((leaf) => cb(leaf.view as BacklinkView));
     }
 
-    iterateCanvasViews(callback: (view: CanvasView) => any): void {
+    iterateCanvasViews(callback: (view: CanvasView) => void): void {
         this.app.workspace.iterateAllLeaves((leaf) => {
             const view = leaf.view;
             if (this.lib.isCanvasView(view)) callback(view);
         });
     }
 
-    iteratePDFEmbeds(callback: (embed: PDFEmbed) => any): void {
+    iteratePDFEmbeds(callback: (embed: PDFEmbed) => void): void {
         this.app.workspace.iterateAllLeaves((leaf) => {
             const view = leaf.view;
             if (view instanceof MarkdownView) {
@@ -72,7 +72,7 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
         });
     }
 
-    iteratePDFViewerComponents(callback: (pdfViewerComponent: PDFViewerComponent, file: TFile | null) => any): void {
+    iteratePDFViewerComponents(callback: (pdfViewerComponent: PDFViewerComponent, file: TFile | null) => void): void {
         this.app.workspace.iterateAllLeaves((leaf) => {
             const view = leaf.view;
 
@@ -91,7 +91,7 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
         });
     }
 
-    iteratePDFViewerChild(callback: (child: PDFViewerChild) => any): void {
+    iteratePDFViewerChild(callback: (child: PDFViewerChild) => void): void {
         this.iteratePDFViewerComponents((component) => {
             component.then((child) => callback(child));
         });
@@ -525,15 +525,17 @@ class HoverEditorLib extends PDFPlusLibSubmodule {
     }
 
     get waitTime() {
-        // @ts-ignore
-        return this.hoverEditorPlugin?.settings.triggerDelay;
+        const plugin = this.hoverEditorPlugin;
+        const settings = plugin && 'settings' in plugin ? plugin.settings : undefined;
+        return typeof settings === 'object' && settings !== null && 'triggerDelay' in settings
+            && typeof settings.triggerDelay === 'number' ? settings.triggerDelay : undefined;
     }
 
     isHoverEditorLeaf(leaf: WorkspaceLeaf): boolean {
         return leaf.containerEl.closest('.popover.hover-popover.hover-editor') !== null;
     }
 
-    async createNewHoverEditorLeaf(hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state?: any): Promise<WorkspaceLeaf | null> {
+    async createNewHoverEditorLeaf(hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state?: Record<string, unknown>): Promise<WorkspaceLeaf | null> {
         if (!this.hoverEditorPlugin) return null;
 
         return new Promise<WorkspaceLeaf | null>((resolve) => {
@@ -553,7 +555,7 @@ class HoverEditorLib extends PDFPlusLibSubmodule {
         });
     }
 
-    iterateHoverEditorLeaves(callback: (leaf: WorkspaceLeaf) => any): void {
+    iterateHoverEditorLeaves(callback: (leaf: WorkspaceLeaf) => void): void {
         this.app.workspace.iterateAllLeaves((leaf) => {
             if (this.isHoverEditorLeaf(leaf)) callback(leaf);
         });

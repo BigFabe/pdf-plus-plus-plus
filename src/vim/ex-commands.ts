@@ -6,7 +6,7 @@ import { UserScriptContext } from 'user-script/context';
 import { MarkdownModal } from 'modals/markdown-modal';
 
 
-export type ExCommand = { id: string, minNargs?: number, description?: string, pattern?: RegExp, func: (...args: string[]) => any };
+export type ExCommand = { id: string, minNargs?: number, description?: string, pattern?: RegExp, func: (...args: string[]) => unknown };
 
 export const exCommands = (vim: VimBindings): ExCommand[] => {
     /***************************************************************

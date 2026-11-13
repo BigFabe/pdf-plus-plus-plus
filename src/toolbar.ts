@@ -279,7 +279,8 @@ export class PDFPlusToolbar extends PDFPlusComponent {
             });
             inputEl.addEventListener('change', () => {
                 const value = inputEl.valueAsNumber / 100;
-                const clamped = Math.min(Math.max(value, window.pdfjsViewer.MIN_SCALE), window.pdfjsViewer.MAX_SCALE);
+                const { MIN_SCALE, MAX_SCALE } = window.pdfjsViewer as typeof window.pdfjsViewer & { MIN_SCALE: number; MAX_SCALE: number };
+                const clamped = Math.min(Math.max(value, MIN_SCALE), MAX_SCALE);
                 pdfViewer.currentScale = clamped;
             });
             eventBus.on('scalechanging', ({ scale }) => {

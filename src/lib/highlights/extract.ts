@@ -2,6 +2,7 @@ import { RGB } from 'obsidian';
 import { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 
 import { PDFPlusLibSubmodule } from 'lib/submodule';
+import { readAnnotationData } from 'lib/annotation-data';
 import { Rect, TextContentItem } from 'typings';
 import { pdfJsQuadPointsToArrayOfRects } from 'utils';
 
@@ -25,25 +26,28 @@ export class HighlightExtractor extends PDFPlusLibSubmodule {
     }
 
     async getAnnotatedTextsInPage(page: PDFPageProxy): Promise<AnnotatedTextsInPage> {
+        // includeChars is specific to Obsidian's version of PDF.js.
+        const options: NonNullable<Parameters<PDFPageProxy['getTextContent']>[0]> & { includeChars: boolean } = { includeChars: true };
         const [{ items }, annots] = await Promise.all([
-            // @ts-ignore
-            page.getTextContent({ includeChars: true }), // includeChars is specific to the Obsidian version of PDF.js
+            page.getTextContent(options),
             page.getAnnotations()
         ]);
 
+        const textItems = items.filter((item): item is TextContentItem => 'str' in item);
         const results: { id: string, textRanges: PDFTextRange[], rgb: RGB | null, comment?: string, left: number, top: number }[] = [];
 
-        for (const annot of annots) {
+        for (const annot of annots.map(readAnnotationData)) {
+            if (!annot?.quadPoints) continue;
             const isTextMarkupAnnot = ['Highlight', 'Underline', 'Squiggly', 'StrikeOut'].includes(annot.subtype);
             if (!isTextMarkupAnnot) continue;
 
             const rects = pdfJsQuadPointsToArrayOfRects(annot.quadPoints);
             if (!rects.length) continue;
             const textRanges = rects
-                .map((rect) => this.getTextByRect(items as TextContentItem[], rect));
+                .map((rect) => this.getTextByRect(textItems, rect));
 
-            const rgb = annot.color ? { r: annot.color[0], g: annot.color[1], b: annot.color[2] } as RGB : null;
-            const comment = annot.contentsObj?.str;
+            const rgb = annot.color ? { r: annot.color[0], g: annot.color[1], b: annot.color[2] } : null;
+            const comment = annot.contents;
 
             results.push({ id: annot.id, textRanges, rgb, comment, left: rects[0][0], top: rects[0][3] });
         }

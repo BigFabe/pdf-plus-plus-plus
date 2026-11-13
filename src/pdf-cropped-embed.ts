@@ -2,7 +2,8 @@ import { App, Component, Notice, Platform, TFile } from 'obsidian';
 import pLimit from 'p-limit';
 
 import PDFPlus from 'main';
-import { AnnotationElement, Embed, EmbedContext, Rect } from 'typings';
+import { Embed, EmbedContext, Rect } from 'typings';
+import { isRect, readAnnotationData } from 'lib/annotation-data';
 
 
 export class PDFCroppedEmbed extends Component implements Embed {
@@ -22,7 +23,8 @@ export class PDFCroppedEmbed extends Component implements Embed {
         super();
         this.app = ctx.app;
         this.containerEl = ctx.containerEl;
-        this.rect = window.pdfjsLib.Util.normalizeRect(rect);
+        const normalized: unknown = window.pdfjsLib.Util.normalizeRect(rect);
+        if (isRect(normalized)) this.rect = normalized;
         this.containerEl.addClass('pdf-cropped-embed');
         if (width) this.containerEl.setAttribute('width', '' + width);
     }
@@ -54,7 +56,7 @@ export class PDFCroppedEmbed extends Component implements Embed {
     }
 
     async loadFile() {
-        const dataUrl: string = await PDFCroppedEmbed.limit(this.computeDataUrl.bind(this));
+        const dataUrl: string = await PDFCroppedEmbed.limit(() => this.computeDataUrl());
 
         this.containerEl.empty();
         const imgEl = this.containerEl.createEl('img');
@@ -84,10 +86,11 @@ export class PDFCroppedEmbed extends Component implements Embed {
             const page = await doc.getPage(this.pageNumber);
 
             if (this.annotationId) {
-                const annotations = await page.getAnnotations();
-                const annotation: AnnotationElement['data'] = annotations.find((annot) => annot.id === this.annotationId);
-                if (annotation && Array.isArray(annotation.rect)) {
-                    this.rect = window.pdfjsLib.Util.normalizeRect(annotation.rect);
+                const annotations: unknown[] = await page.getAnnotations();
+                const annotation = annotations.map(readAnnotationData).find((annot) => annot?.id === this.annotationId);
+                if (annotation) {
+                    const normalized: unknown = window.pdfjsLib.Util.normalizeRect(annotation.rect);
+                    if (isRect(normalized)) this.rect = normalized;
                 }
             }
 

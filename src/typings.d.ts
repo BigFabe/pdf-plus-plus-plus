@@ -29,10 +29,17 @@ declare global {
         pdfjsViewer: {
             // See the docstring of `ObsidianViewer` for more details.
             ObsidianViewer?: Constructor<ObsidianViewer>; // Obsidian v1.7.7 or earlier
-            createObsidianPDFViewer?: (options: any) => ObsidianViewer; // Obsidian v1.8.0 or later
-            [key: string]: any;
+            createObsidianPDFViewer?: (options: unknown) => ObsidianViewer; // Obsidian v1.8.0 or later
+            removeNullCharacters(text: string): string;
+            scrollIntoView(element: HTMLElement, spot?: { top?: number; left?: number }, scrollMatches?: boolean): void;
+            AppOptions: { get(name: string): unknown };
         };
-        electron?: typeof import('electron');
+        electron?: typeof import('electron') & {
+            remote?: {
+                app: Pick<import('electron').App, 'getVersion'>;
+                getCurrentWebContents(): Pick<import('electron').WebContents, 'showDefinitionForSelection'>;
+            };
+        };
         Capacitor: CapacitorGlobal & {
             Plugins: {
                 // The following plugins are available only if Platform.isMobileApp is true.
@@ -54,20 +61,6 @@ declare global {
 
     interface Document {
         caretPositionFromPoint(x: number, y: number, options?: CaretPositionFromPointOptions): CaretPosition | null;
-    }
-
-    interface Navigator {
-        userAgentData?: {
-            /** Returns an array of brand information containing the browser name and version. */
-            brands: Array<{
-                brand: string;
-                version: string;
-            }>;
-            /** Returns true if the user-agent is running on a mobile device. */
-            mobile: boolean;
-            /** Returns the platform brand the user-agent is running on. */
-            platform: string;
-        };
     }
 
     interface Selection {
@@ -101,10 +94,10 @@ interface PDFViewerComponent extends Component {
     /** Scope shared with PDFView and PDFViewerChild. */
     scope: Scope;
     child: PDFViewerChild | null;
-    next: ((child: PDFViewerChild) => any)[] | null;
+    next: ((child: PDFViewerChild) => unknown)[] | null;
     app: App;
     containerEl: HTMLElement;
-    opts: any;
+    opts: { isEmbed?: boolean };
     then(cb: (child: PDFViewerChild) => void): void; // register a callback executed when the child gets ready
     loadFile(file: TFile, subpath?: string): Promise<void>;
     //////////////////////////
@@ -254,14 +247,14 @@ interface ObsidianViewer {
     zoomOut(): void;
     zoomReset(): void;
     rotatePages(angle: number): void;
-    open(options: any): Promise<void>;
+    open(options: { url?: string; data?: ArrayBuffer | Uint8Array }): Promise<void>;
     load(pdfDocument: PDFDocumentProxy): void;
     //////////////////////////
     // Added by this plugin //
     //////////////////////////
     /** Used to open external PDFs. */
     pdfPlusRedirect?: { from: string, to: string };
-    pdfPlusCallbacksOnDocumentLoaded?: ((doc: PDFDocumentProxy) => any)[];
+    pdfPlusCallbacksOnDocumentLoaded?: ((doc: PDFDocumentProxy) => unknown)[];
 }
 
 interface ObsidianServices {
@@ -278,7 +271,7 @@ export interface PDFJsAppOptions {
     defaultZoomValue: string;
     spreadModeOnLoad: SpreadMode;
     scrollModeOnLoad: ScrollMode;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 interface PDFSidebar {
@@ -405,7 +398,7 @@ interface PDFFindBar {
      * @param unusedArg This parameter seems to be unused.
      * @param counts See the explanation for `updateResultsCount()`.
      */
-    updateUIState(findState: number, unusedArg: any, counts?: PDFSearchMatchCounts): void;
+    updateUIState(findState: number, unusedArg: unknown, counts?: PDFSearchMatchCounts): void;
     /**
      * @param counts Defaults to `{ current: 0, total: 0 }`.
      */
@@ -435,7 +428,7 @@ interface PDFFindController {
 
 interface PDFViewer {
     pdfDocument: PDFDocumentProxy;
-    pagesPromise: Promise<any> | null;
+    pagesPromise: Promise<unknown> | null;
     pagesCount: number;
     /** 1-based page number. This is an accessor property; the setter can be used to scroll to a page and dispatches 'pagechanging' event */
     currentPageNumber: number;
@@ -500,7 +493,7 @@ interface TextLayerBuilder {
     div: HTMLDivElement; // div.textLayer
     /** This property exists since Obsidian v1.8.0. It was private and inaccessible before then. */
     textLayer: TextLayer | null;
-    render(): Promise<any>;
+    render(): Promise<void>;
 }
 
 /**
@@ -508,7 +501,7 @@ interface TextLayerBuilder {
  */
 interface OldTextLayerBuilder {
     div: HTMLDivElement; // div.textLayer
-    render(): Promise<any>;
+    render(): Promise<void>;
     /** This property does NOT exist since Obsidian 1.8.0. */
     textDivs: HTMLElement[];
     /** This property does NOT exist since Obsidian 1.8.0. */
@@ -539,7 +532,7 @@ interface AnnotationLayerBuilder {
     annotationLayer: AnnotationLayer;
     annotationStorage: AnnotationStorage;
     renderForms: boolean;
-    render(): Promise<any>;
+    render(): Promise<void>;
 }
 
 interface AnnotationLayer {
@@ -576,7 +569,7 @@ interface AnnotationElement {
         rect: Rect;
         inReplyTo?: string;
         replyType?: 'R' | 'Group';
-        [key: string]: any;
+        [key: string]: unknown;
     }
 }
 
@@ -600,8 +593,8 @@ interface TextContentItem {
 }
 
 interface EventBus {
-    on<K extends keyof PDFJsEventMap>(name: K, callback: (data: PDFJsEventMap[K]) => any): void;
-    off<K extends keyof PDFJsEventMap>(name: K, callback: (data: PDFJsEventMap[K]) => any): void;
+    on<K extends keyof PDFJsEventMap>(name: K, callback: (data: PDFJsEventMap[K]) => unknown): void;
+    off<K extends keyof PDFJsEventMap>(name: K, callback: (data: PDFJsEventMap[K]) => unknown): void;
     dispatch<K extends keyof PDFJsEventMap>(name: K, data: PDFJsEventMap[K]): void;
 }
 
@@ -612,14 +605,14 @@ interface PDFJsEventMap {
     textlayerrendered: { source: PDFPageView, pageNumber: number };
     annotationlayerrendered: { source: PDFPageView, pageNumber: number };
     pagesloaded: { source: PDFViewer, pagesCount: number };
-    pagerendered: { source: PDFPageView, pageNumber: number, cssTransform: boolean, timestamp: number, error: any };
+    pagerendered: { source: PDFPageView, pageNumber: number, cssTransform: boolean, timestamp: number, error: unknown };
     pagechanging: { source: PDFViewer, pageNumber: number, pageLabel: string | null, previous: number };
     findbaropen: { source: PDFFindBar };
     findbarclose: { source: PDFFindBar };
-    togglesidebar: { open: boolean, source?: any };
-    switchspreadmode: { mode: SpreadMode, source?: any };
-    switchscrollmode: { mode: ScrollMode, source?: any };
-    scalechanged: { value: string, source?: any };
+    togglesidebar: { open: boolean, source?: unknown };
+    switchspreadmode: { mode: SpreadMode, source?: unknown };
+    switchscrollmode: { mode: ScrollMode, source?: unknown };
+    scalechanged: { value: string, source?: unknown };
     scalechanging: { source: PDFViewer, scale: number, presetValue?: number };
     documentinit: { source: ObsidianViewer };
 }
@@ -650,7 +643,7 @@ interface BacklinkRenderer extends Component {
     extraContext: boolean;
     sortOrder: TFileSortOrder;
     showSearch: boolean;
-    searchQuery: any;
+    searchQuery: unknown;
     file: TFile | null;
     backlinkFile: TFile | null;
     backlinkCollapsed: boolean;
@@ -686,12 +679,12 @@ interface NavHeaderDom {
     app: App;
     navHeaderEl: HTMLElement;
     navButtonsEl: HTMLElement;
-    addNavButton(icon: IconName, tooltip: string, onClick: (evt: MouseEvent) => any, cls?: string): HTMLElement;
+    addNavButton(icon: IconName, tooltip: string, onClick: (evt: MouseEvent) => unknown, cls?: string): HTMLElement;
 }
 
 interface SearchResultDom {
-    changed: Debouncer<any, void>;
-    infinityScroll: any;
+    changed: Debouncer<[], void>;
+    infinityScroll: unknown;
     vChildren: VChildren<SearchResultDom, SearchResultFileDom>;
     resultDomLookup: Map<TFile, SearchResultFileDom>;
     focusedItem: SearchResultItemDom | null;
@@ -739,7 +732,7 @@ interface SearchResultDom {
 }
 
 interface SearchResultFileDom {
-    onMatchRender: (...args: any[]) => unknown;
+    onMatchRender: (...args: unknown[]) => unknown;
     collapsible: boolean;
     collapsed: boolean;
     extraContext: boolean;
@@ -780,7 +773,7 @@ interface SearchResultItemDom {
     /** The end position (Loc.offset) of the text range that is rendered into this item dom. Don't confuse it with the end position of a link! */
     end: number;
     matches: FileSearchResult['content' | 'properties'];
-    mutateEState: any;
+    mutateEState: unknown;
     el: HTMLElement;
     showMoreBeforeEl: HTMLElement;
     showMoreAfterEl: HTMLElement;
@@ -795,7 +788,7 @@ interface SearchResultItemDom {
         hidden: boolean;
         next: boolean;
     };
-    onMatchRender: (...args: any[]) => unknown;
+    onMatchRender: (...args: unknown[]) => unknown;
     parent?: SearchResultFileDom; // same as parentDom
 
     onResultClick(evt: Event): void;
@@ -843,14 +836,14 @@ interface Runnable {
 }
 
 interface Queue {
-    items: any;
+    items: unknown[];
     promise: Promise<void> | null;
     runnable: Runnable;
 }
 
 interface AppSetting extends Modal {
     openTab(tab: SettingTab): void;
-    openTabById(id: string): any;
+    openTabById(id: string): void;
     activeTab: SettingTab | null;
     pluginTabs: PluginSettingTab[];
 }
@@ -906,7 +899,7 @@ interface EmbedContext {
     depth: number;
     displayMode?: boolean;
     showInline?: boolean;
-    state?: any;
+    state?: unknown;
 }
 
 interface EmbedRegistry extends Events {
@@ -923,8 +916,8 @@ interface EmbedRegistry extends Events {
 interface HistoryState {
     title: string;
     icon: string;
-    state: any;
-    eState: any;
+    state: unknown;
+    eState: unknown;
 }
 
 interface Draggable {
@@ -936,7 +929,7 @@ interface Draggable {
     sourcePath?: string;
     file?: TAbstractFile;
     files?: TAbstractFile[];
-    items?: any[];
+    items?: unknown[];
 }
 
 type DropEffect = 'none' | 'copy' | 'link' | 'move';
@@ -1106,10 +1099,10 @@ declare module 'obsidian' {
             manifests: Record<string, PluginManifest>;
             plugins: {
                 dataview?: Plugin & {
-                    api: any;
+                    api: unknown;
                 };
                 quickadd?: Plugin & {
-                    api: any;
+                    api: unknown;
                 };
                 ['obsidian-hover-editor']?: Plugin & {
                     activePopovers: (HoverPopover & { toggleMinimized(): void, togglePin(value?: boolean): void })[];
@@ -1130,14 +1123,14 @@ declare module 'obsidian' {
                     instance: {
                         options?: Record<string, boolean>;
                         overrides?: Record<string, boolean>;
-                        onLinkHover(hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: any): void;
+                        onLinkHover(hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: unknown): void;
                     }
                     enabled: boolean;
                     enable(): void;
                     disable(): void;
                 },
                 [id: string]: {
-                    instance: any;
+                    instance: unknown;
                     enabled: boolean;
                 }
             }
@@ -1161,7 +1154,7 @@ declare module 'obsidian' {
          * but be careful that values that become false when casted to boolean
          * will cause the key being removed from the local storage.
          */
-        saveLocalStorage(key: string, value?: any): void;
+        saveLocalStorage(key: string, value?: unknown): void;
     }
 
     interface FileManager {
@@ -1176,7 +1169,7 @@ declare module 'obsidian' {
 
     interface MetadataCache {
         initialized: boolean;
-        on(name: 'initialized', callback: () => void, ctx?: any): EventRef;
+        on(name: 'initialized', callback: () => void, ctx?: unknown): EventRef;
         getBacklinksForFile(file: TFile): CustomArrayDict<ReferenceCache>;
     }
 
@@ -1185,7 +1178,7 @@ declare module 'obsidian' {
         recentFileTracker: RecentFileTracker;
         hoverLinkSources: Record<string, HoverLinkSource>
         getActiveFileView(): FileView | null;
-        trigger(name: string, ...data: any[]): void;
+        trigger(name: string, ...data: unknown[]): void;
         trigger(name: 'hover-link', ctx: {
             event: MouseEvent;
             source: string;
@@ -1193,7 +1186,7 @@ declare module 'obsidian' {
             targetEl?: HTMLElement;
             linktext: string;
             sourcePath?: string;
-            state?: any;
+            state?: unknown;
         }): void;
         handleExternalLinkContextMenu(menu: Menu, url: string): boolean;
     }
@@ -1258,7 +1251,7 @@ declare module 'obsidian' {
         titleEl: HTMLElement;
         section: string;
         /** The callback registered via `onClick`. */
-        callback: (evt: MouseEvent | KeyboardEvent) => any;
+        callback: (evt: MouseEvent | KeyboardEvent) => unknown;
         submenu: Menu | null;
         /** If `this.submenu` is not set yet, create a new menu and set it to `this.submenu`. It also clears the callback function registered via `onClick`. */
         setSubmenu(): Menu;
@@ -1285,7 +1278,7 @@ declare module 'obsidian' {
     }
 
     interface Vault {
-        getConfig(name: string): any;
+        getConfig(name: string): unknown;
         getConfig(name: 'useMarkdownLinks'): boolean;
         getConfig(name: 'useTab'): boolean;
         getConfig(name: 'tabSize'): number;
@@ -1296,7 +1289,7 @@ declare module 'obsidian' {
     }
 
     interface MetadataCache {
-        onCleanCache(callback: () => any): void;
+        onCleanCache(callback: () => unknown): void;
     }
 
     interface Component {
@@ -1318,7 +1311,7 @@ declare module 'obsidian' {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Declaration merging must retain the generic parameter of Obsidian's interface.
     interface AbstractTextComponent<T> {
-        changeCallback?: (value: string) => any;
+        changeCallback?: (value: string) => unknown;
     }
 
     interface SearchComponent {
@@ -1332,7 +1325,7 @@ declare module 'obsidian' {
         // and as a result, the keymap may not work for some non-US keyboards (e.g. JIS).
         // Setting `modifiers` to `null` is undocumented but makes this keymap work regardless of modifiers, thereby fixing the issue.
         register(modifiers: Modifier[] | null, key: string | null, func: KeymapEventListener): KeymapEventHandler;
-        handleKey(evt: KeyboardEvent, info: KeymapInfo): any;
+        handleKey(evt: KeyboardEvent, info: KeymapInfo): boolean | void;
     }
 
     interface KeymapEventHandler {

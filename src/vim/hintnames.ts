@@ -49,7 +49,7 @@ function* hintnames_simple(
  */
 function* permutationsWithReplacement<T>(arr: ArrayLike<T>, n: number) {
     const len = arr.length;
-    const counters = new Array(n).fill(0);
+    const counters = new Array<number>(n).fill(0);
     let index = 1;
     for (let iteration = 0; iteration < Math.pow(len, n); iteration++) {
         yield counters.map(i => arr[i]);
@@ -106,7 +106,7 @@ function* range(length: number) {
 }
 
 /** Taken from https://github.com/tridactyl/tridactyl/blob/4a4c9c7306b436611088b6ff2dceff77e7ccbfd6/src/lib/itertools.ts#L146-L148 */
-function* map<T>(arr: Iterable<T>, func: (v: T) => any) {
+function* map<T, U>(arr: Iterable<T>, func: (v: T) => U): IterableIterator<U> {
     for (const v of arr) yield func(v);
 }
 

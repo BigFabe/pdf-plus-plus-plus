@@ -10,7 +10,7 @@ interface OutlineInfo {
 
 
 export class PDFOutlineTitleModal extends PDFPlusModal {
-    next: ((answer: OutlineInfo) => any)[] = [];
+    next: ((answer: OutlineInfo) => unknown)[] = [];
     modalTitle: string;
     submitted: boolean = false;
 
@@ -73,7 +73,7 @@ export class PDFOutlineTitleModal extends PDFPlusModal {
         return this;
     }
 
-    then(callback: (answer: OutlineInfo) => any) {
+    then(callback: (answer: OutlineInfo) => unknown) {
         if (this.submitted && this.title !== null) {
             const title = this.title;
             Promise.resolve().then(() => callback({ title })).catch(this.reportError);
@@ -108,7 +108,7 @@ export class PDFOutlineMoveModal extends FuzzySuggestModal<PDFOutlineItem> {
     plugin: PDFPlus;
     outlines: PDFOutlines;
     items: PDFOutlineItem[];
-    next: ((item: PDFOutlineItem) => any)[] = [];
+    next: ((item: PDFOutlineItem) => unknown)[] = [];
 
     constructor(outlines: PDFOutlines, itemToMove: PDFOutlineItem) {
         super(outlines.plugin.app);
@@ -130,7 +130,7 @@ export class PDFOutlineMoveModal extends FuzzySuggestModal<PDFOutlineItem> {
         return this;
     }
 
-    then(callback: (item: PDFOutlineItem) => any) {
+    then(callback: (item: PDFOutlineItem) => unknown) {
         this.next.push(callback);
         return this;
     }

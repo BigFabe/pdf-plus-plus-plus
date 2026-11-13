@@ -11,6 +11,21 @@ import { SidebarView } from 'pdfjs-enums';
 import { showContextMenuAtSelection } from 'context-menu';
 import { RestoreDefaultModal } from 'modals/restore-default-modal';
 import { DataviewInlineFieldsModal } from './dataview';
+import { isRecord } from './annotation-data';
+
+function matchesDebugSetting(value: unknown, example: unknown): boolean {
+    if (Array.isArray(example)) {
+        return Array.isArray(value) && value.every((item: unknown) => example.length
+            ? example.some((sample: unknown) => matchesDebugSetting(item, sample))
+            : typeof item === 'string');
+    }
+    if (isRecord(example)) {
+        return isRecord(value) && Object.entries(example).every(([key, sample]) =>
+            Object.hasOwn(value, key) && matchesDebugSetting(value[key], sample)
+        );
+    }
+    return typeof value === typeof example && (typeof value !== 'number' || Number.isFinite(value));
+}
 
 
 export class PDFPlusCommands extends PDFPlusLibSubmodule {
@@ -413,7 +428,7 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
             const sidebar = pdfViewer?.pdfSidebar;
             if (sidebar) {
                 if (!sidebar.haveOutline) return false;
-                if (sidebar.isOpen && sidebar.active === 2) {
+                if (sidebar.isOpen && sidebar.active === SidebarView.OUTLINE) {
                     if (this.settings.closeSidebarWithShowCommandIfExist) {
                         if (!checking) sidebar.close();
                         return true;
@@ -443,7 +458,7 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
     showThumbnail(checking: boolean) {
         const sidebar = this.lib.getObsidianViewer(true)?.pdfSidebar;
         if (!sidebar) return false;
-        if (sidebar.isOpen && sidebar.active === 1) {
+        if (sidebar.isOpen && sidebar.active === SidebarView.THUMBS) {
             if (this.settings.closeSidebarWithShowCommandIfExist) {
                 if (!checking) sidebar.close();
                 return true;
@@ -1026,7 +1041,8 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
 
     async copyDebugInfo() {
         // Obsidian debug info
-        const obsidianDebugInfo = await getObsidianDebugInfo(this.app);
+        const obsidianDebugInfo: unknown = await getObsidianDebugInfo(this.app);
+        if (!isRecord(obsidianDebugInfo)) throw new Error('Invalid Obsidian debug info.');
         // PDF++ settings
         const settings = Object.assign({}, this.settings,
             // redact the annotation author name 
@@ -1062,7 +1078,19 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
         if (!checking) {
             (async () => {
                 try {
-                    const { settings, styleSettings, styleSheet } = JSON.parse(await navigator.clipboard.readText());
+                    const data: unknown = JSON.parse(await navigator.clipboard.readText());
+                    if (!isRecord(data) || !isRecord(data.settings)) throw new Error('Invalid PDF++ debug info.');
+                    const { styleSettings, styleSheet } = data;
+                    const settings = this.plugin.getDefaultSettings();
+                    for (const [key, value] of Object.entries(data.settings)) {
+                        if (!Object.hasOwn(settings, key)) continue;
+                        const example: unknown = Reflect.get(settings, key);
+                        const valid = key === 'colors'
+                            ? isRecord(value) && Object.values(value).every((color) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))
+                            : matchesDebugSetting(value, example);
+                        if (!valid) throw new Error(`Invalid debug setting: ${key}`);
+                        Object.assign(settings, { [key]: value });
+                    }
 
                     new Notice(`${this.plugin.manifest.name}: Debug info loaded from clipboard.`);
 
@@ -1070,8 +1098,7 @@ export class PDFPlusCommands extends PDFPlusLibSubmodule {
                     console.debug('- settings:', settings);
                     console.debug('- styleSettings:', styleSettings);
                     console.debug('- styleSheet:', styleSheet);
-                    // @ts-ignore
-                    window.pdfPlusDebugInfo = { settings, styleSettings, styleSheet };
+                    Reflect.set(window, 'pdfPlusDebugInfo', { settings, styleSettings, styleSheet });
 
                     this.plugin.settings = settings;
                     const tab = this.app.setting.pluginTabs.find((tab) => tab.id === this.plugin.manifest.id);

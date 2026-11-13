@@ -25,4 +25,4 @@ Workflow updates for locked installs, lint/build CI and attestations for `main.j
 
 # Compatibility limits
 
-PDF++ patches undocumented Obsidian/PDF.js internals. New Obsidian releases can still break those integrations. Static declarations retain explicit `any` at incompletely documented API boundaries; this is not a claim of complete type safety or a security audit.
+PDF++ patches undocumented Obsidian/PDF.js internals. New Obsidian releases can still break those integrations. Private API contracts are described explicitly and untrusted results are narrowed before use. Dependency declarations can still be incomplete, and neither type-checking nor linting constitutes a security audit or guarantees compatibility with future private-API changes.

@@ -44,7 +44,7 @@ export class VimVisualMode extends VimBindingsMode {
     }
 
     defineKeymaps() {
-        const visualMotion = (func: (n?: number) => any) => {
+        const visualMotion = (func: (n?: number) => void) => {
             return (n?: number) => (func(n), this.selectionChangedByVisualMotion = true);
         };
 

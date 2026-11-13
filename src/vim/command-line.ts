@@ -112,8 +112,8 @@ export class VimCommandLineMode extends VimBindingsMode {
                 return;
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-require-imports -- Intentional desktop-only shell command support; unavailable on mobile.
-            const { exec } = require('child_process') as typeof import('child_process');
+            // Imported only after the desktop guard: trusted shell commands are unavailable on mobile.
+            const { exec } = await import('child_process');
             const env = { ...process.env };
             if (this.settings.PATH) env.PATH = this.settings.PATH;
 

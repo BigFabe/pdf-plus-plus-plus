@@ -276,6 +276,7 @@ export class PDFAnnotationEditModal extends PDFAnnotationModal {
     addContentsSetting() {
         if (this.oldValues.contents || this.allowNoValue.contents) {
             new Setting(this.contentEl)
+                .setClass('pdf-plus-annotation-contents-setting')
                 .setName('Comment')
                 .then((setting) => {
                     this.previewEl = setting.controlEl.createDiv('preview-container markdown-rendered');

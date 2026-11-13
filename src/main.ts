@@ -16,11 +16,23 @@ import { BibliographyManager } from 'bib';
 import { DataviewInlineFieldsModal, withFilesWithInlineFields } from 'lib/dataview';
 
 
+type LegacySettings = Partial<Record<
+	'aliasFormat' | 'showCopyLinkToSearchInContextMenu' | 'enalbeWriteHighlightToFile'
+	| 'selectToCopyToggleRibbonIcon' | 'removeWhitespaceBetweenCJKChars', unknown
+>>;
+
+type PDFPlusEventMap = {
+	highlight: [{ type: 'selection' | 'annotation'; source: 'obsidian' | 'pdf-plus'; pageNumber: number; child: PDFViewerChild }];
+	'color-palette-state-change': [{ source: ColorPalette }];
+	'update-dom': [];
+	'adapt-to-theme-change': [{ adapt: boolean }];
+};
+
 export default class PDFPlus extends Plugin {
 	/** The core internal API. Not intended to be used by other plugins. */
 	lib: PDFPlusLib = new PDFPlusLib(this);
 	/** User's preferences. */
-	settings: PDFPlusSettings;
+	settings: PDFPlusSettings & LegacySettings;
 	/** The plugin setting tab. */
 	settingTab: PDFPlusSettingTab;
 	events: Events = new Events();
@@ -149,7 +161,7 @@ export default class PDFPlus extends Plugin {
 				try {
 					await adapter.rmdir(anyStyleInputDir, true);
 				} catch (err) {
-					if (err.code !== 'ENOENT') throw err;
+					if (typeof err !== 'object' || err === null || !('code' in err) || err.code !== 'ENOENT') throw err;
 				}
 			}
 		}
@@ -189,7 +201,9 @@ export default class PDFPlus extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign(this.getDefaultSettings(), await this.loadData());
+		const stored: unknown = await this.loadData();
+		const saved = typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? stored : {};
+		this.settings = Object.assign(this.getDefaultSettings(), saved);
 		// Older releases enabled background requests by default, without explicit consent.
 		if (!this.settings.updateCheckConsent) this.settings.autoCheckForUpdates = false;
 
@@ -224,32 +238,27 @@ export default class PDFPlus extends Plugin {
 		}
 
 		for (const cmd of this.settings.copyCommands) {
-			// @ts-ignore
-			if (Object.prototype.hasOwnProperty.call(cmd, 'format')) {
-				// @ts-ignore
+			if ('format' in cmd && typeof cmd.format === 'string') {
 				cmd.template = cmd.format;
-				// @ts-ignore
 				delete cmd.format;
 			}
 		}
 
-		if (Object.prototype.hasOwnProperty.call(this.settings, 'aliasFormat')) {
+		if (typeof this.settings.aliasFormat === 'string') {
 			this.settings.displayTextFormats.push({
 				name: 'Custom',
-				// @ts-ignore
 				template: this.settings.aliasFormat
 			});
-			// @ts-ignore
 			delete this.settings.aliasFormat;
 		}
 
 		if (Object.prototype.hasOwnProperty.call(this.settings, 'showCopyLinkToSearchInContextMenu')) {
 			const searchSectionConfig = this.settings.contextMenuConfig.find(({ id }) => id === 'search');
 			if (searchSectionConfig) {
-				// @ts-ignore
-				searchSectionConfig.visible &&= this.settings.showCopyLinkToSearchInContextMenu;
+				if (typeof this.settings.showCopyLinkToSearchInContextMenu === 'boolean') {
+					searchSectionConfig.visible &&= this.settings.showCopyLinkToSearchInContextMenu;
+				}
 			}
-			// @ts-ignore
 			delete this.settings.showCopyLinkToSearchInContextMenu;
 		}
 
@@ -270,11 +279,10 @@ export default class PDFPlus extends Plugin {
 		this.loadContextMenuConfig();
 	}
 
-	private renameSetting(oldId: string, newId: keyof PDFPlusSettings) {
-		if (Object.prototype.hasOwnProperty.call(this.settings, oldId)) {
-			// @ts-ignore
-			this.settings[newId] = this.settings[oldId];
-			// @ts-ignore
+	private renameSetting(oldId: keyof LegacySettings, newId: KeysOfType<PDFPlusSettings, boolean>) {
+		const value = this.settings[oldId];
+		if (typeof value === 'boolean') {
+			this.settings[newId] = value;
 			delete this.settings[oldId];
 		}
 	}
@@ -431,11 +439,10 @@ export default class PDFPlus extends Plugin {
 	}
 
 	async saveSettings() {
-		const settings: any = Object.assign({}, this.settings);
+		const { anystylePath, ...settings } = this.settings;
 
 		// AnyStyle path: save to local storage, not to data.json
-		this.saveLocalStorage('anystylePath', settings.anystylePath);
-		delete settings.anystylePath;
+		this.saveLocalStorage('anystylePath', anystylePath);
 
 		await this.saveData(settings);
 	}
@@ -444,7 +451,7 @@ export default class PDFPlus extends Plugin {
 		return this.app.loadLocalStorage(this.manifest.id + '-' + key);
 	}
 
-	saveLocalStorage(key: string, value?: any) {
+	saveLocalStorage(key: string, value?: unknown) {
 		this.app.saveLocalStorage(this.manifest.id + '-' + key, value);
 	}
 
@@ -702,15 +709,13 @@ export default class PDFPlus extends Plugin {
 		});
 	}
 
-	private registerGlobalVariable(name: string, value: any, throwError: boolean = true) {
+	private registerGlobalVariable(name: string, value: unknown, throwError: boolean = true) {
 		if (name in window) {
 			if (throwError) throw new Error(`${this.manifest.name}: Global variable "${name}" already exists.`);
 			else return;
 		}
-		// @ts-ignore
-		window[name] = value;
-		// @ts-ignore
-		this.register(() => delete window[name]);
+		Reflect.set(window, name, value);
+		this.register(() => { Reflect.deleteProperty(window, name); });
 	}
 
 	private registerGlobalVariables() {
@@ -793,18 +798,19 @@ export default class PDFPlus extends Plugin {
 
 		// 
 		// https://github.com/RyotaUshio/obsidian-pdf-plus/issues/285
-		this.registerEvent(this.app.workspace.on('editor-drop', (evt, editor, info) => {
-			this.lib.dummyFileManager.createDummyFilesOnEditorDrop(evt, editor, info).catch((error) => {
-				console.error(`${this.manifest.name}: Failed to create dummy PDF files on drop.`, error);
-				new Notice(`${this.manifest.name}: Could not create dummy PDF files. See console for details.`);
-			});
-		}));
+		const dummyFiles = this.lib.dummyFileManager;
+		// Register the handler containing the defaultPrevented check and synchronous preventDefault.
+		this.registerEvent(this.app.workspace.on('editor-drop', dummyFiles.createDummyFilesOnEditorDrop.bind(dummyFiles)));
 	}
 
 	registerOneTimeEvent<T extends Events>(events: T, ...[evt, callback, ctx]: OverloadParameters<T['on']>) {
-		const eventRef = events.on(evt, (...args: any[]) => {
-			callback.call(ctx, ...args);
+		const eventRef = events.on(evt, (...args: unknown[]) => {
 			events.offref(eventRef);
+			// The overload tuple guarantees the callback matches this event's payload.
+			const handler = callback as (...data: unknown[]) => unknown;
+			Promise.resolve(handler.apply(ctx, args)).catch((error: unknown) => {
+				console.error(`${this.manifest.name}: One-time event handler failed.`, error);
+			});
 		}, ctx);
 		this.registerEvent(eventRef);
 	}
@@ -923,29 +929,20 @@ export default class PDFPlus extends Plugin {
 		}
 	}
 
-	on(evt: 'highlight', callback: (data: { type: 'selection' | 'annotation', source: 'obsidian' | 'pdf-plus', pageNumber: number, child: PDFViewerChild }) => any, context?: any): EventRef;
-	on(evt: 'color-palette-state-change', callback: (data: { source: ColorPalette }) => any, context?: any): EventRef;
-	on(evt: 'update-dom', callback: () => any, context?: any): EventRef;
-	on(evt: 'adapt-to-theme-change', callback: (data: { adapt: boolean }) => any, context?: any): EventRef;
-
-	on(evt: string, callback: (...data: any) => any, context?: any): EventRef {
-		return this.events.on(evt, callback, context);
+	on<K extends keyof PDFPlusEventMap>(evt: K, callback: (...data: PDFPlusEventMap[K]) => unknown, context?: unknown): EventRef {
+		// Obsidian's untyped event bus forwards exactly the payload declared by trigger().
+		return this.events.on(evt, callback as (...data: unknown[]) => unknown, context);
 	}
 
-	off(evt: string, callback: (...data: any) => any) {
-		this.events.off(evt, callback);
+	off<K extends keyof PDFPlusEventMap>(evt: K, callback: (...data: PDFPlusEventMap[K]) => unknown) {
+		this.events.off(evt, callback as (...data: unknown[]) => unknown);
 	}
 
 	offref(ref: EventRef) {
 		this.events.offref(ref);
 	}
 
-	trigger(evt: 'highlight', data: { type: 'selection' | 'annotation', source: 'obsidian' | 'pdf-plus', pageNumber: number, child: PDFViewerChild }): void;
-	trigger(evt: 'color-palette-state-change', data: { source: ColorPalette }): void;
-	trigger(evt: 'update-dom'): void;
-	trigger(evt: 'adapt-to-theme-change', data: { adapt: boolean }): void;
-
-	trigger(evt: string, ...args: any[]): void {
+	trigger<K extends keyof PDFPlusEventMap>(evt: K, ...args: PDFPlusEventMap[K]): void {
 		this.events.trigger(evt, ...args);
 	}
 
@@ -971,8 +968,14 @@ export default class PDFPlus extends Plugin {
 
 	openHotkeySettingTab(query?: string): SettingTab {
 		this.app.setting.open();
-		const tab = this.app.setting.openTabById('hotkeys');
-		tab.setQuery(query ?? this.manifest.id);
+		this.app.setting.openTabById('hotkeys');
+		const tab = this.app.setting.activeTab;
+		if (!tab || !('setQuery' in tab) || typeof tab.setQuery !== 'function') {
+			throw new Error('Obsidian did not open the hotkey settings tab.');
+		}
+		// setQuery is the hotkey tab's private search entry point.
+		const setQuery = tab.setQuery as (query: string) => void;
+		setQuery.call(tab, query ?? this.manifest.id);
 		return tab;
 	}
 

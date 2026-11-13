@@ -1,4 +1,5 @@
-import { ButtonComponent, Notice, setTooltip, type App, type TFile } from 'obsidian';
+import { ButtonComponent, Events, Notice, setTooltip, type App, type TFile } from 'obsidian';
+import { isRecord } from './annotation-data';
 
 import type PDFPlus from 'main';
 import { PDFPlusModal } from 'modals';
@@ -8,14 +9,27 @@ import { hookInternalLinkMouseEventHandlers } from 'utils';
 type Link = { path: string };
 type ListItem = { key: Link, value: Link | Array<Link> };
 
+function isLink(value: unknown): value is Link {
+    return isRecord(value) && typeof value.path === 'string';
+}
+
+function isListItem(value: unknown): value is ListItem {
+    return isRecord(value) && isLink(value.key)
+        && (isLink(value.value) || (Array.isArray(value.value) && value.value.every(isLink)));
+}
+
+function isDataviewApi(value: unknown): value is { query(source: string): unknown } {
+    return isRecord(value) && typeof value.query === 'function';
+}
+
 const listItemContainsInlineFields = (item: ListItem, app: App, propertyName: string): boolean => {
     const path = item.key.path;
 
     let values = Array.isArray(item.value) ? item.value : [item.value];
     values = values.filter((value): value is Link => (
         value
-        && Object.prototype.hasOwnProperty.call(value, 'path')
-        && Object.prototype.hasOwnProperty.call(value, 'subpath')
+        && Object.hasOwn(value, 'path')
+        && Object.hasOwn(value, 'subpath')
     ));
 
     const cache = app.metadataCache.getCache(path);
@@ -46,14 +60,13 @@ export const withFilesWithInlineFields = (plugin: PDFPlus, callback: (files: TFi
         const dvPlugin = app.plugins.plugins.dataview;
         if (!dvPlugin) return;
 
-        // @ts-ignore
-        if (dvPlugin.index.initialized) {
+        if ('index' in dvPlugin && isRecord(dvPlugin.index) && dvPlugin.index.initialized === true) {
             onDataviewReady().catch((error) => {
                 console.error(`${plugin.manifest.name}: Failed to process Dataview inline fields.`, error);
             });
         } else {
-            // @ts-ignore
-            const ref = app.metadataCache.on('dataview:index-ready', () => {
+            const events: Events = app.metadataCache;
+            const ref = events.on('dataview:index-ready', () => {
                 onDataviewReady().catch((error) => {
                     console.error(`${plugin.manifest.name}: Failed to process Dataview inline fields.`, error);
                 });
@@ -69,18 +82,19 @@ const getFilesWithInlineFields = async (plugin: PDFPlus): Promise<TFile[]> => {
 
     const dvPlugin = app.plugins.plugins.dataview;
     if (!dvPlugin) return [];
-    const dv = dvPlugin.api;
+    const dv: unknown = dvPlugin.api;
+    if (!isDataviewApi(dv)) return [];
 
     const propertyName = plugin.settings.proxyMDProperty;
 
     try {
         const result = await dv.query(`LIST ${propertyName} WHERE ${propertyName}`);
 
-        if (!result.successful) {
+        if (!isRecord(result) || result.successful !== true || !isRecord(result.value) || !Array.isArray(result.value.values)) {
             return [];
         }
 
-        const listItems: ListItem[] = result.value.values;
+        const listItems = result.value.values.filter(isListItem);
         return listItems
             .filter((item) => listItemContainsInlineFields(item, app, propertyName))
             .map((item) => {

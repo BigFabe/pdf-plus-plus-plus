@@ -493,7 +493,7 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
         return this.child.containerEl.win;
     }
 
-    addItem(cb: (item: MenuItem) => any): this {
+    addItem(cb: (item: MenuItem) => void): this {
         if (this.currentSection) {
             return super.addItem((item) => {
                 cb(item);
@@ -521,16 +521,16 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
             return this.settings.contextMenuConfig.find((section) => section.id === id)?.visible;
         };
 
-        // If macOS, add "look up selection" action
-        if (Platform.isMacOS && Platform.isDesktopApp && this.win.electron && selectedText && isVisible('action')) {
+        // If macOS, add "look up selection" action when the desktop bridge is available.
+        const remote = this.win.electron?.remote;
+        if (Platform.isMacOS && Platform.isDesktopApp && remote && selectedText && isVisible('action')) {
             this.addItem((item) => {
                 return item
                     .setSection('action')
                     .setTitle(`Look up "${selectedText.length <= 25 ? selectedText : selectedText.slice(0, 24).trim() + '…'}"`)
                     .setIcon('lucide-library')
                     .onClick(() => {
-                        // @ts-ignore
-                        this.win.electron!.remote.getCurrentWebContents().showDefinitionForSelection();
+                        remote.getCurrentWebContents().showDefinitionForSelection();
                     });
             });
         }
@@ -851,7 +851,7 @@ type PDFPlusProductMenuOptions = ReturnType<PDFPlusProductMenuComponent['getOpti
 export class PDFPlusProductMenuComponent extends PDFPlusComponent {
     rootMenu: Menu;
     palette: ColorPalette;
-    clickItemCallback: ((options: { colorName: string | null, copyFormat: string, displayTextFormat: string }) => any) | null = null;
+    clickItemCallback: ((options: { colorName: string | null, copyFormat: string, displayTextFormat: string }) => void) | null = null;
 
     itemToColorName = new Map<MenuItem, string | null>;
     itemToCopyFormat = new Map<MenuItem, string>;
@@ -874,7 +874,7 @@ export class PDFPlusProductMenuComponent extends PDFPlusComponent {
         return rootMenu.addChild(new PDFPlusProductMenuComponent(rootMenu, palette));
     }
 
-    then(callback: (menuComponent: this) => any) {
+    then(callback: (menuComponent: this) => void) {
         callback(this);
         return this;
     }
@@ -914,14 +914,14 @@ export class PDFPlusProductMenuComponent extends PDFPlusComponent {
             order = order.slice(0, 1);
         }
 
-        addProductMenuItems(this.rootMenu, order.map((type) => {
+        addProductMenuItems(this.rootMenu, order.map((type): (menu: Menu) => void => {
             switch (type) {
                 case 'color':
-                    return this.addColorItems.bind(this);
+                    return (menu) => { this.addColorItems(menu); };
                 case 'copy-format':
-                    return this.addCopyFormatItems.bind(this);
+                    return (menu) => { this.addCopyFormatItems(menu); };
                 case 'display':
-                    return this.addDisplayTextItems.bind(this);
+                    return (menu) => { this.addDisplayTextItems(menu); };
             }
         }), {
             clickableParentItem: true,
@@ -964,7 +964,7 @@ export class PDFPlusProductMenuComponent extends PDFPlusComponent {
         fixOpenSubmenu(menu, 100);
     }
 
-    private addNamedTemplateItems(menu: Menu, templates: NamedTemplate[], checkedIndex: number, map: Map<MenuItem, string>, onClick: (template: NamedTemplate, evt: MouseEvent | KeyboardEvent) => any) {
+    private addNamedTemplateItems(menu: Menu, templates: NamedTemplate[], checkedIndex: number, map: Map<MenuItem, string>, onClick: (template: NamedTemplate, evt: MouseEvent | KeyboardEvent) => void) {
         for (let i = 0; i < templates.length; i++) {
             menu.addItem((item) => {
                 item.setTitle(templates[i].name)
@@ -1070,7 +1070,7 @@ export class PDFPlusProductMenuComponent extends PDFPlusComponent {
         this.rootMenu.hide();
     }
 
-    onItemClick(callback: (options: { colorName: string | null, copyFormat: string, displayTextFormat: string }) => any) {
+    onItemClick(callback: (options: { colorName: string | null, copyFormat: string, displayTextFormat: string }) => void) {
         this.clickItemCallback = callback;
     }
 }

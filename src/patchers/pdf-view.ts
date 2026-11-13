@@ -15,7 +15,8 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
     if (!pdfView) return false;
 
     if (!plugin.patchStatus.pdfView) {
-        plugin.register(around(pdfView.constructor.prototype, {
+        const prototype = pdfView.constructor.prototype as PDFView;
+        plugin.register(around(prototype, {
             getState(old) {
                 return function (this: PDFView) {
                     const ret = old.call(this);
@@ -35,8 +36,7 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
                 };
             },
             setState(old) {
-                // State belongs to Obsidian's undocumented PDF view implementation.
-                return function (this: PDFView, state: any, result: ViewStateResult): Promise<void> {
+                return function (this: PDFView, state: Parameters<PDFView['setState']>[0], result: ViewStateResult): Promise<void> {
                     if (plugin.settings.alwaysRecordHistory) {
                         result.history = true;
                     }
