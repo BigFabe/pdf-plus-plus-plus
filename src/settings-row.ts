@@ -21,7 +21,7 @@ export class PDFPlusSettingRow {
 		return this.then((setting) => {
 			if (typeof content === 'string') setting.setDesc(content);
 			else {
-				const fragment = setting.settingEl.ownerDocument.createDocumentFragment();
+				const fragment = createFragment();
 				fragment.append(...content);
 				setting.setDesc(fragment);
 			}
