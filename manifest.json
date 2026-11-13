@@ -1,6 +1,6 @@
 {
-    "id": "pdf-plus",
-    "name": "PDF++",
+    "id": "pdf-plus-plus",
+    "name": "PDF+++",
     "version": "0.40.31",
     "minAppVersion": "1.5.8",
     "description": "Annotate PDFs with linked notes, highlights, and portable Markdown annotations.",

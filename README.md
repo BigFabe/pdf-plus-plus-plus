@@ -5,7 +5,7 @@
 
 PDF+++ is a maintenance fork of [Ryota Ushio's PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus), with compatibility fixes, improved text selection and safer asynchronous operations. See [REVIEW.md](REVIEW.md) for the changes and [SECURITY.md](SECURITY.md) for permissions and limitations.
 
-The plugin ID remains `pdf-plus` to preserve settings and existing command links. The documentation below describes the original PDF++ features.
+The fork keeps its existing plugin ID `pdf-plus-plus` and display name PDF+++. Do not enable it alongside the original PDF++: both patch the same viewer internals. The documentation below describes the original PDF++ features.
 
 This is an [Obsidian.md](https://obsidian.md) plugin for a better PDF experience. Specifically:
 

@@ -304,7 +304,6 @@ export function getAndroidWebViewVersion() {
  */
 export async function getSystemInfo(): Promise<any> {
     if (window.electron) {
-         
         // eslint-disable-next-line @typescript-eslint/no-require-imports -- Desktop-only system information; never imported on mobile.
         const os = require('os') as typeof import('os');
         return {
