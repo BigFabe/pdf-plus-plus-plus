@@ -5,7 +5,7 @@
 
 PDF+++ is a maintenance fork of [Ryota Ushio's PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus), with compatibility fixes, improved text selection and safer asynchronous operations. See [REVIEW.md](REVIEW.md) for the changes and [SECURITY.md](SECURITY.md) for permissions and limitations.
 
-The fork keeps its existing plugin ID `pdf-plus-plus` and uses the display name `pdf+++`. Do not enable it alongside the original PDF++: both patch the same viewer internals. On Obsidian 1.13+, settings are indexed by the native settings search while retaining the existing controls. Older supported versions keep the previous settings renderer. The documentation below describes the original PDF++ features.
+The fork keeps its existing plugin ID `pdf-plus-plus` and uses the display name `pdf+++`. Do not enable it alongside the original PDF++: both patch the same viewer internals. Requires Obsidian 1.13.0 or newer. Settings are indexed by the native settings search while retaining the existing controls. The documentation below describes the original PDF++ features.
 
 This is an [Obsidian.md](https://obsidian.md) plugin for a better PDF experience. Specifically:
 
@@ -28,7 +28,6 @@ PDF++ stands out among other PDF annotation tools for the following reasons:
 
 > [!note]
 > - Some features require the [Style Settings](https://github.com/mgmeyers/obsidian-style-settings) plugin enabled.
-> - In the near future, you will need Obsidian v1.6.5 or higher to receive updates from PDF++. Otherwise, you will be stuck at the last PDF++ version that supported older versions of Obsidian.
 > - If you're an Android user and have trouble with PDF++, first try updating [Android System WebView](https://play.google.com/store/apps/details?id=com.google.android.webview&hl=en) (if you are on Android 7-9, update [Chrome](https://play.google.com/store/apps/details?id=com.android.chrome&hl=en) instead).
 
 > [!warning]

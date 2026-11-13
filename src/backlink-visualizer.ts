@@ -205,6 +205,7 @@ export class BacklinkDomManager extends PDFPlusComponent {
     setHighlightColor(el: HTMLElement, color: ReturnType<PDFBacklinkCache['getColor']>) {
         if (color?.type === 'name') {
             el.dataset.highlightColor = color.name.toLowerCase();
+            this.plugin.domManager.applyHighlightColor(el);
         } else if (color?.type === 'rgb') {
             const { r, g, b } = color.rgb;
             el.setCssProps({

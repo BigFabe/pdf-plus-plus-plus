@@ -1,269 +1,184 @@
-import { MarkdownRenderChild, RGB } from 'obsidian';
+import { MarkdownRenderChild, RGB, setIcon } from 'obsidian';
 
 import PDFPlus from 'main';
-import { ColorPalette } from 'color-palette';
 import { hexToRgb, isHexString, rgbStringToObject } from 'utils';
 import { PDFPlusComponent } from 'lib/component';
 
 
-function cssRgbComponents(color: string) {
-	const rgb = hexToRgb(color);
-	return rgb ? `${rgb.r}, ${rgb.g}, ${rgb.b}` : 'var(--text-highlight-bg-rgb)';
-}
-
 export class DomManager extends PDFPlusComponent {
-	styleEl: HTMLStyleElement;
-	private documentStyles = new Map<Document, HTMLStyleElement>();
+	cssVariables: Record<string, string> = {};
+	enabled = false;
+	private colors = new Map<string, { color: string, rgb: string }>();
+	private documentCleanups = new Map<Document, () => void>();
+	private calloutIcons = new WeakMap<HTMLElement, { original: ChildNode[], applied: ChildNode | null }>();
 
 	constructor(plugin: PDFPlus) {
 		super(plugin);
-		const doc = plugin.app.workspace.containerEl.ownerDocument;
-		this.styleEl = plugin.registerEl(doc.head.createEl('style', { attr: { id: 'pdf-plus-style' } }));
 	}
 
 	update() {
 		this.unload();
-		// reload only if parent is loaded
 		this.plugin.removeChild(this);
 		this.plugin.addChild(this);
 	}
 
-	registerEl<HTMLElementType extends HTMLElement>(el: HTMLElementType) {
-		this.register(() => el.remove());
-		return el;
-	}
-
 	onload() {
-		this.plugin.trigger('update-dom');
-
-		this.updateStyleEl();
-
-		this.registerDocument(this.styleEl.ownerDocument);
+		this.enabled = true;
+		this.setCSSColorVariables();
+		this.registerDocument(this.app.workspace.containerEl.ownerDocument);
 		this.app.workspace.iterateAllLeaves((leaf) => this.registerDocument(leaf.containerEl.ownerDocument));
 		this.registerEvent(this.app.workspace.on('window-open', (_, win) => this.registerDocument(win.document)));
-		this.registerEvent(this.app.workspace.on('window-close', (_, win) => this.documentStyles.delete(win.document)));
+		this.registerEvent(this.app.workspace.on('window-close', (_, win) => {
+			this.documentCleanups.get(win.document)?.();
+			this.documentCleanups.delete(win.document);
+		}));
 		this.register(() => {
-			for (const [doc, style] of this.documentStyles) {
-				if (style !== this.styleEl) style.remove();
-				doc.body.removeClass('pdf-plus-click-embed-to-open-link', 'pdf-plus-backlink-selection-highlight', 'pdf-plus-backlink-selection-underline');
-			}
-			this.documentStyles.clear();
+			this.enabled = false;
+			for (const cleanup of this.documentCleanups.values()) cleanup();
+			this.documentCleanups.clear();
 		});
 
+		this.plugin.trigger('update-dom');
 		this.app.workspace.trigger('css-change');
 	}
 
 	private registerDocument(doc: Document) {
-		if (this.documentStyles.has(doc)) return;
-		const style = doc === this.styleEl.ownerDocument ? this.styleEl : doc.head.createEl('style');
-		if (style !== this.styleEl) {
-			style.id = this.styleEl.id;
-			style.textContent = this.styleEl.textContent;
+		if (this.documentCleanups.has(doc)) return;
+		const previous = new Map<string, { value: string, priority: string }>();
+		for (const [name, value] of Object.entries(this.cssVariables)) {
+			previous.set(name, { value: doc.body.style.getPropertyValue(name), priority: doc.body.style.getPropertyPriority(name) });
+			doc.body.style.setProperty(name, value);
 		}
-		this.documentStyles.set(doc, style);
 		doc.body.toggleClass('pdf-plus-click-embed-to-open-link', this.settings.dblclickEmbedToOpenLink);
 		doc.body.toggleClass('pdf-plus-backlink-selection-highlight', this.settings.selectionBacklinkVisualizeStyle === 'highlight');
 		doc.body.toggleClass('pdf-plus-backlink-selection-underline', this.settings.selectionBacklinkVisualizeStyle === 'underline');
-	}
 
-	updateStyleEl() {
-		const settings = this.plugin.settings;
-
-		this.styleEl.textContent = Object.entries(settings.colors).map(([name, color]) => {
-			return isHexString(color) ? [
-				`.pdf-plus-backlink-highlight-layer .pdf-plus-backlink:not(.hovered-highlight)[data-highlight-color="${name.toLowerCase()}"],`,
-				`.pdf-embed[data-highlight-color="${name.toLowerCase()}"] .textLayer .mod-focused {`,
-				`    --pdf-plus-color: ${color};`,
-				`    --pdf-plus-color-rgb: ${cssRgbComponents(color)};`,
-				`    --pdf-plus-backlink-icon-color: ${color};`,
-				`    --pdf-plus-rect-color: ${color};`,
-				`    --pdf-plus-rect-color-rgb: ${cssRgbComponents(color)};`,
-				`}`
-			].join('\n') : '';
-		}).join('\n');
-
-		let defaultColor = settings.colors[settings.defaultColor];
-		if (!defaultColor || !isHexString(defaultColor)) {
-			defaultColor = 'rgb(var(--text-highlight-bg-rgb))';
+		for (const el of doc.querySelectorAll<HTMLElement>('.pdf-plus-backlink[data-highlight-color], .pdf-embed[data-highlight-color]')) {
+			this.applyHighlightColor(el);
 		}
-		this.styleEl.textContent += [
-			`\n.pdf-plus-backlink-highlight-layer .pdf-plus-backlink:not(.hovered-highlight) {`,
-			`    --pdf-plus-color: ${defaultColor};`,
-			`    --pdf-plus-color-rgb: ${cssRgbComponents(defaultColor)};`,
-			`    --pdf-plus-backlink-icon-color: ${defaultColor};`,
-			`    --pdf-plus-rect-color: ${defaultColor};`,
-			`    --pdf-plus-rect-color-rgb: ${cssRgbComponents(defaultColor)};`,
-			`}`
-		].join('\n');
+		for (const el of doc.querySelectorAll<HTMLElement>('.callout')) this.applyCalloutStyle(el);
 
-		let backlinkHoverColor = settings.colors[settings.backlinkHoverColor];
-		if (!backlinkHoverColor || !isHexString(backlinkHoverColor)) backlinkHoverColor = '#008000';
-		this.styleEl.textContent += [
-			`\n.pdf-plus-backlink-highlight-layer .pdf-plus-backlink.hovered-highlight {`,
-			`	--pdf-plus-color: ${backlinkHoverColor};`,
-			`	--pdf-plus-backlink-icon-color: ${backlinkHoverColor};`,
-			`   --pdf-plus-rect-color: ${backlinkHoverColor};`,
-			`   --pdf-plus-color-rgb: ${cssRgbComponents(backlinkHoverColor)};`,
-			`   --pdf-plus-rect-color-rgb: ${cssRgbComponents(backlinkHoverColor)};`,
-			`}`
-		].join('\n');
-
-		for (const [name, color] of Object.entries(settings.colors)) {
-			if (!isHexString(color)) continue;
-
-			this.styleEl.textContent += [
-				`\n.${ColorPalette.CLS}-item[data-highlight-color="${name.toLowerCase()}"] > .${ColorPalette.CLS}-item-inner {`,
-				`    background-color: ${color};`,
-				`}`
-			].join('\n');
-		}
-
-		this.styleEl.textContent += [
-			`\n.${ColorPalette.CLS}-item:not([data-highlight-color]) > .${ColorPalette.CLS}-item-inner {`,
-			`    background-color: transparent;`,
-			`}`
-		].join('\n');
-
-		this.styleEl.textContent += [
-			`\n.workspace-leaf.pdf-plus-link-opened.is-highlighted::before {`,
-			`	opacity: ${settings.existingTabHighlightOpacity};`,
-			`}`
-		].join('\n');
-
-		this.setCSSColorVariables();
-		this.updateCalloutStyle();
-	}
-
-	updateCalloutStyle() {
-		if (!this.plugin.settings.useCallout) return;
-
-		const calloutType = this.plugin.settings.calloutType.toLowerCase();
-
-		for (const colorName of Object.keys(this.plugin.settings.colors)) {
-			const varName = this.toCSSVariableName(colorName) ?? '--pdf-plus-default-color-rgb';
-
-			this.styleEl.textContent += [
-				`\n.callout[data-callout="${calloutType}"][data-callout-metadata="${colorName.toLowerCase()}"] {`,
-				`	--callout-color: var(${varName});`,
-				`   background-color: rgba(var(--callout-color), var(--pdf-plus-highlight-opacity, 0.2))`,
-				`}`
-			].join('\n');
-		}
-
-		this.styleEl.textContent += [
-			`\n.callout[data-callout="${calloutType}"] {`,
-			`	--callout-color: var(--pdf-plus-default-color-rgb);`,
-			`   background-color: rgba(var(--callout-color), var(--pdf-plus-highlight-opacity, 0.2))`,
-			`}`
-		].join('\n');
-
-		const iconName = this.plugin.settings.calloutIcon;
-		if (iconName) {
-			this.styleEl.textContent += [
-				`\n.callout[data-callout="${calloutType}"] {`,
-				`   --callout-icon: lucide-${iconName};`,
-				`}`
-			].join('\n');
-		} else {
-			this.styleEl.textContent += [
-				`\n.callout[data-callout="${calloutType}"] .callout-icon {`,
-				`   display: none;`,
-				`}`
-			].join('\n');
-		}
-	}
-
-	registerCalloutRenderer() {
-		const calloutType = this.plugin.settings.calloutType.toLowerCase();
-
-		this.plugin.registerMarkdownPostProcessor((el, ctx) => {
-			for (const calloutEl of el.querySelectorAll<HTMLElement>(`.callout[data-callout="${calloutType}"][data-callout-metadata*=","]`)) {
-				ctx.addChild(new PDFPlusCalloutRenderer(calloutEl));
+		this.documentCleanups.set(doc, () => {
+			for (const [name, { value, priority }] of previous) {
+				if (value) doc.body.style.setProperty(name, value, priority);
+				else doc.body.style.removeProperty(name);
 			}
+			doc.body.removeClass('pdf-plus-click-embed-to-open-link', 'pdf-plus-backlink-selection-highlight', 'pdf-plus-backlink-selection-underline');
+			for (const el of doc.querySelectorAll<HTMLElement>('.pdf-plus-named-highlight')) this.clearHighlightColor(el);
+			for (const el of doc.querySelectorAll<HTMLElement>('.pdf-plus-callout')) this.clearCalloutStyle(el);
 		});
 	}
 
 	setCSSColorVariables() {
-		const settings = this.plugin.settings;
-
-		for (const [colorName, hexColor] of Object.entries(settings.colors)) {
-			const varName = this.toCSSVariableName(colorName);
-			const rgbColor = hexToRgb(hexColor);
-			if (varName !== null) {
-				if (rgbColor !== null) {
-					const { r, g, b } = rgbColor;
-					this.styleEl.textContent += [
-						`\nbody {`,
-						`    ${varName}: ${r}, ${g}, ${b}`,
-						`}`
-					].join('\n');
-				}
-			}
+		this.colors.clear();
+		this.cssVariables = {};
+		for (const [name, color] of Object.entries(this.settings.colors)) {
+			if (!isHexString(color)) continue;
+			const rgb = hexToRgb(color);
+			if (!rgb) continue;
+			const components = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+			this.colors.set(name.toLowerCase(), { color, rgb: components });
+			const variable = this.toCSSVariableName(name);
+			if (variable) this.cssVariables[variable] = components;
 		}
+		const defaultColor = this.colors.get(this.settings.defaultColor.toLowerCase());
+		const hoverColor = this.colors.get(this.settings.backlinkHoverColor.toLowerCase());
+		Object.assign(this.cssVariables, {
+			'--pdf-plus-default-color': defaultColor?.color ?? 'rgb(var(--text-highlight-bg-rgb))',
+			'--pdf-plus-default-color-rgb': defaultColor?.rgb ?? 'var(--text-highlight-bg-rgb)',
+			'--pdf-plus-hover-color': hoverColor?.color ?? '#008000',
+			'--pdf-plus-hover-color-rgb': hoverColor?.rgb ?? '0, 128, 0',
+			'--pdf-plus-existing-tab-highlight-opacity': String(this.settings.existingTabHighlightOpacity),
+			'--pdf-plus-callout-icon': this.settings.calloutIcon ? `lucide-${this.settings.calloutIcon}` : 'none',
+		});
+	}
 
-		let defaultColorSet = false;
-		if (settings.defaultColor in settings.colors) {
-			const varName = this.toCSSVariableName(settings.defaultColor);
-			if (varName !== null) {
-				this.styleEl.textContent += [
-					`\nbody {`,
-					`    --pdf-plus-default-color-rgb: var(${varName})`,
-					`}`
-				].join('\n');
-				defaultColorSet = true;
-			}
+	applyHighlightColor(el: HTMLElement) {
+		const color = this.colors.get(el.dataset.highlightColor?.toLowerCase() ?? '');
+		if (!color) {
+			this.clearHighlightColor(el);
+			return;
 		}
-		if (!defaultColorSet) {
-			this.styleEl.textContent += [
-				`\nbody {`,
-				`    --pdf-plus-default-color-rgb: var(--text-highlight-bg-rgb)`,
-				`}`
-			].join('\n');
-		}
+		el.addClass('pdf-plus-named-highlight');
+		el.setCssProps({ '--pdf-plus-named-color': color.color, '--pdf-plus-named-color-rgb': color.rgb });
+	}
 
-		// let defaultColor = settings.colors[settings.defaultColor];
-		// if (!defaultColor || !isHexString(defaultColor)) {
-		// 	defaultColor = 'rgb(var(--text-highlight-bg-rgb))';
-		// }
-		// this.styleEl.textContent += [
-		// 	`\n.pdf-plus-backlink-highlight-layer .pdf-plus-backlink:not(.hovered-highlight) {`,
-		// 	`    background-color: ${defaultColor};`,
-		// 	`}`
-		// ].join('\n');
+	private clearHighlightColor(el: HTMLElement) {
+		el.removeClass('pdf-plus-named-highlight');
+		el.style.removeProperty('--pdf-plus-named-color');
+		el.style.removeProperty('--pdf-plus-named-color-rgb');
+	}
+
+	applyCalloutStyle(el: HTMLElement) {
+		if (!this.enabled) return;
+		if (!this.settings.useCallout || el.dataset.callout !== this.settings.calloutType.toLowerCase()) {
+			if (el.hasClass('pdf-plus-callout')) this.clearCalloutStyle(el);
+			return;
+		}
+		el.addClass('pdf-plus-callout');
+		el.toggleClass('pdf-plus-callout-no-icon', !this.settings.calloutIcon);
+		const metadata = el.dataset.calloutMetadata ?? '';
+		const namedColor = this.colors.get(metadata.toLowerCase());
+		const colorVariable = this.toCSSVariableName(metadata);
+		const components = metadata.split(',').map((value) => parseInt(value));
+		const isRgb = components.length === 3 && components.every((value) => value >= 0 && value <= 255);
+		el.style.setProperty('--pdf-plus-callout-color-rgb', isRgb ? components.join(', ')
+			: namedColor && colorVariable ? `var(${colorVariable})` : 'var(--pdf-plus-default-color-rgb)');
+
+		const iconEl = el.querySelector<HTMLElement>(':scope > .callout-title > .callout-icon');
+		if (iconEl && this.settings.calloutIcon) {
+			const previous = this.calloutIcons.get(iconEl);
+			const original = previous && previous.applied === iconEl.firstChild ? previous.original : Array.from(iconEl.childNodes);
+			setIcon(iconEl, `lucide-${this.settings.calloutIcon}`);
+			this.calloutIcons.set(iconEl, { original, applied: iconEl.firstChild });
+		}
+	}
+
+	clearCalloutStyle(el: HTMLElement) {
+		el.removeClass('pdf-plus-callout', 'pdf-plus-callout-no-icon');
+		el.style.removeProperty('--pdf-plus-callout-color-rgb');
+		const iconEl = el.querySelector<HTMLElement>(':scope > .callout-title > .callout-icon');
+		if (iconEl) {
+			const previous = this.calloutIcons.get(iconEl);
+			if (previous?.applied === iconEl.firstChild) iconEl.replaceChildren(...previous.original);
+			this.calloutIcons.delete(iconEl);
+		}
+	}
+
+	registerCalloutRenderer() {
+		this.plugin.registerMarkdownPostProcessor((el, ctx) => {
+			const callouts = Array.from(el.querySelectorAll<HTMLElement>('.callout'));
+			if (el.matches('.callout')) callouts.unshift(el);
+			for (const calloutEl of callouts) ctx.addChild(new PDFPlusCalloutRenderer(calloutEl, this));
+		});
 	}
 
 	toCSSVariableName(colorName: string): string | null {
-		// extract alphanumeric parts from colorName, and then concatenate them with '-'
-		let encoded = colorName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-		// strip leading and trailing '-'
-		encoded = encoded.replace(/^-+|-+$/g, '');
+		const encoded = colorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 		return encoded ? '--pdf-plus-' + encoded + '-rgb' : null;
 	}
 
 	getRgb(colorName?: string): RGB {
-		let colorVarName = '--pdf-plus-default-color-rgb';
-		if (colorName) {
-			const specificColorVarName = this.toCSSVariableName(colorName);
-			if (specificColorVarName) {
-				colorVarName = specificColorVarName;
-			}
-		}
-		const rgbString = activeDocument.win.getComputedStyle(activeDocument.body).getPropertyValue(colorVarName); // "R, G, B"
-		const rgbColor = rgbStringToObject(rgbString);
-		return rgbColor;
+		const colorVarName = (colorName && this.toCSSVariableName(colorName)) || '--pdf-plus-default-color-rgb';
+		const rgbString = activeDocument.win.getComputedStyle(activeDocument.body).getPropertyValue(colorVarName);
+		return rgbStringToObject(rgbString);
 	}
 }
 
 class PDFPlusCalloutRenderer extends MarkdownRenderChild {
-	onload() {
-		const metadata = this.containerEl.dataset.calloutMetadata;
-		if (metadata) {
-			const rgb = metadata.split(',').map((val) => parseInt(val));
-			const isRgb = rgb.length === 3 && rgb.every((val) => 0 <= val && val <= 255);
+	constructor(el: HTMLElement, private manager: DomManager) {
+		super(el);
+	}
 
-			if (isRgb) {
-				this.containerEl.style.setProperty('--callout-color', rgb.join(', '));
-			}
-		}
+	onload() {
+		const update = () => this.manager.applyCalloutStyle(this.containerEl);
+		update();
+		this.registerEvent(this.manager.plugin.on('update-dom', update));
+		const observer = new MutationObserver(update);
+		observer.observe(this.containerEl, { attributes: true, attributeFilter: ['data-callout', 'data-callout-metadata'] });
+		this.register(() => {
+			observer.disconnect();
+			if (this.manager.enabled) this.manager.clearCalloutStyle(this.containerEl);
+		});
 	}
 }

@@ -206,7 +206,7 @@ export class VimVisualMode extends VimBindingsMode {
             }
             if (prevDiv && isNodeNonemptyTextDiv(prevDiv) && prevDiv.dataset.idx !== undefined) {
                 index = +prevDiv.dataset.idx;
-                offset = prevDiv.textContent!.length - 1;
+                offset = (prevDiv.textContent ?? '').length - 1;
             }
         } else if (textDiv.textContent && offset >= textDiv.textContent.length) {
             let nextDiv = textDiv.nextSibling;

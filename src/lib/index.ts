@@ -27,7 +27,7 @@ import { RenderParameters } from 'pdfjs-dist/types/src/display/api';
 function isHTMLElement(value: unknown): value is HTMLElement {
     // Obsidian's cross-window instanceof also recognizes nodes in popout windows.
     return typeof value === 'object' && value !== null
-        && Reflect.apply(Node.prototype.instanceOf, value, [HTMLElement]) === true;
+        && Node.prototype.instanceOf.call(value, HTMLElement) === true;
 }
 
 

@@ -193,8 +193,7 @@ export class BibliographyManager extends PDFPlusComponent {
                         const msg = `${plugin.manifest.name}: AnyStyle not found at the path "${anystylePath}".`;
                         if (plugin.settings.anystylePath) {
                             const notice = new Notice(msg, 8000);
-                            // messageEl was added after the minimum supported Obsidian 1.5.8.
-                            const messageEl = notice.messageEl ?? notice.noticeEl;
+                            const messageEl = notice.messageEl;
                             messageEl.appendText(' Click ');
                             messageEl.createEl('a', { text: 'here' }, (anchorEl) => {
                                 anchorEl.addEventListener('click', () => {

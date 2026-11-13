@@ -171,6 +171,34 @@ settings:
     --pdf-plus-highlight-padding-default-em: 0.05em;
 }
 
+.pdf-plus-backlink-highlight-layer .pdf-plus-backlink,
+.pdf-embed.pdf-plus-named-highlight .textLayer .mod-focused {
+    --pdf-plus-color: var(--pdf-plus-named-color, var(--pdf-plus-default-color));
+    --pdf-plus-color-rgb: var(--pdf-plus-named-color-rgb, var(--pdf-plus-default-color-rgb));
+    --pdf-plus-backlink-icon-color: var(--pdf-plus-color);
+    --pdf-plus-rect-color: var(--pdf-plus-color);
+    --pdf-plus-rect-color-rgb: var(--pdf-plus-color-rgb);
+}
+
+.pdf-plus-backlink-highlight-layer .pdf-plus-backlink.hovered-highlight {
+    --pdf-plus-color: var(--pdf-plus-hover-color);
+    --pdf-plus-color-rgb: var(--pdf-plus-hover-color-rgb);
+}
+
+.workspace-leaf.pdf-plus-link-opened.is-highlighted::before {
+    opacity: var(--pdf-plus-existing-tab-highlight-opacity, 0.2);
+}
+
+.callout.pdf-plus-callout {
+    --callout-color: var(--pdf-plus-callout-color-rgb, var(--pdf-plus-default-color-rgb));
+    --callout-icon: var(--pdf-plus-callout-icon);
+    background-color: rgba(var(--callout-color), var(--pdf-plus-highlight-opacity, 0.2));
+}
+
+.callout.pdf-plus-callout-no-icon > .callout-title > .callout-icon {
+    display: none;
+}
+
 .hide-pdf-embed-toolbar .pdf-embed[src*="#"] .pdf-toolbar,
 .hide-pdf-embed-toolbar .popover.hover-popover.hover-editor .pdf-embed[src*="#"] .pdf-toolbar {
     display: none;
@@ -230,6 +258,7 @@ body.hide-pdf-toolbar-in-hover-editor .popover.hover-popover.hover-editor .view-
             height: var(--swatch-width);
             border-radius: 50%;
             border: var(--input-border-width) solid var(--background-modifier-border);
+            background-color: var(--pdf-plus-swatch-color, transparent);
         }
     }
 

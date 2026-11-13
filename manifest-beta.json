@@ -2,7 +2,7 @@
     "id": "pdf-plus-plus",
     "name": "pdf+++",
     "version": "0.40.31",
-    "minAppVersion": "1.5.8",
+    "minAppVersion": "1.13.0",
     "description": "Annotate PDFs with linked notes, highlights, and portable Markdown annotations.",
     "author": "Ryota Ushio",
     "authorUrl": "https://github.com/RyotaUshio",
