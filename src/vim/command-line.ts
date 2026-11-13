@@ -27,7 +27,7 @@ export class VimCommandLineMode extends VimBindingsMode {
                 inputEl.placeholder = 'type a command or page number...';
 
                 inputEl.addEventListener('focusout', () => {
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         if (this.isActive) {
                             this.vim.enterNormalMode();
                         }
@@ -66,7 +66,7 @@ export class VimCommandLineMode extends VimBindingsMode {
         this.suggest = new ExcmdSuggest(this)
             .onSelect(({ item: { minNargs: nargs } }) =>
                 // Wait for the value of the input element to be updated
-                setTimeout(() => {
+                window.setTimeout(() => {
                     if (!nargs) {
                         this.submitCommand();
                         return;
@@ -79,17 +79,18 @@ export class VimCommandLineMode extends VimBindingsMode {
             this.viewer.then((child) => {
                 const eventBus = child.pdfViewer.eventBus;
                 if (eventBus) {
-                    eventBus.on('pagesloaded', () => setTimeout(() => {
-                        if (this.plugin.vimrc === null) {
-                            const vimrcPath = normalizePath(this.settings.vimrcPath);
-                            this.app.vault.adapter.read(vimrcPath)
-                                .then((script) => this.runScript(this.plugin.vimrc = script));
-                        } else {
-                            this.runScript(this.plugin.vimrc);
-                        }
-                    }, // @ts-ignore
-                        { once: true }
-                    ));
+                    const onPagesLoaded = () => {
+                        eventBus.off('pagesloaded', onPagesLoaded);
+                        window.setTimeout(() => {
+                            const script = this.plugin.vimrc === null
+                                ? this.app.vault.adapter.read(normalizePath(this.settings.vimrcPath))
+                                : Promise.resolve(this.plugin.vimrc);
+                            script.then((script) => this.runScript(this.plugin.vimrc = script))
+                                .catch((error: unknown) => console.error(`${this.plugin.manifest.name}: Failed to load vimrc`, error));
+                        });
+                    };
+                    eventBus.on('pagesloaded', onPagesLoaded);
+                    this.register(() => eventBus.off('pagesloaded', onPagesLoaded));
                 }
             });
         }
@@ -111,22 +112,26 @@ export class VimCommandLineMode extends VimBindingsMode {
                 return;
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-require-imports 
+            // eslint-disable-next-line @typescript-eslint/no-require-imports -- Intentional desktop-only shell command support; unavailable on mobile.
             const { exec } = require('child_process') as typeof import('child_process');
-            const env = process.env;
+            const env = { ...process.env };
             if (this.settings.PATH) env.PATH = this.settings.PATH;
 
             return new Promise<string>((resolve, reject) => exec(cmd.slice(1), { env }, (err, stdout, stderr) => {
-                if (err) reject(err);
-                if (stdout) alert(stdout), resolve(stdout);
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                if (stdout) new Notice(stdout);
                 if (stderr) console.warn(stderr);
+                resolve(stdout);
             }));
         }
 
         // :<page number> - go to page
         if (/^[1-9]\d*$/.test(cmd)) {
             const pageNumber = +cmd;
-            this.pdfViewer && (this.pdfViewer.currentPageNumber = pageNumber);
+            if (this.pdfViewer) this.pdfViewer.currentPageNumber = pageNumber;
             return;
         }
 
@@ -153,19 +158,18 @@ export class VimCommandLineMode extends VimBindingsMode {
             const selectedHistoryItem = this.history[this.historyIndex];
             if (selectedHistoryItem === cmd) this.history.splice(this.historyIndex, 1);
 
-            try {
-                this.executeCommand(cmd);
-            } catch (err) {
-                new Notice(`${this.plugin.manifest.name} (Vim mode): Error occurred while executing the command : ${err}`);
-                console.error(err);
-            }
+            this.executeCommand(cmd).catch((error: unknown) => {
+                new Notice(`${this.plugin.manifest.name} (Vim mode): Error occurred while executing the command: ${error}`);
+                console.error(error);
+            });
         }
         this.vim.enterNormalMode();
     }
 
-    runScript(script: string) {
-        const cmds = this.parseScript(script);
-        cmds.forEach((cmd) => this.executeCommand(cmd, { error: ['console.warn'], history: false }));
+    async runScript(script: string) {
+        for (const cmd of this.parseScript(script)) {
+            await this.executeCommand(cmd, { error: ['console.warn'], history: false });
+        }
     }
 
     parseScript(script: string): string[] {

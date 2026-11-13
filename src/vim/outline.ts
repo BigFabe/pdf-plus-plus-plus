@@ -3,6 +3,7 @@ import { VimBindingsMode } from './mode';
 import { VimCommand } from './scope';
 import { PDFOutlineTreeNode, PDFOutlineViewer } from 'typings';
 import { SidebarView } from 'pdfjs-enums';
+import { Notice } from 'obsidian';
 
 
 type OutlineCommand = (outline: PDFOutlineViewer, n?: number) => any;
@@ -121,11 +122,17 @@ export class VimOutlineMode extends VimBindingsMode {
     }
 
     collapse(item: PDFOutlineTreeNode) {
-        item.setCollapsed(true, this.settings.vimSmoothOutlineMode);
+        item.setCollapsed(true, this.settings.vimSmoothOutlineMode).catch((error: unknown) => {
+            console.error('PDF++: Failed to collapse outline item', error);
+            new Notice('PDF++: Failed to collapse outline item. See console for details.');
+        });
     }
 
     expand(item: PDFOutlineTreeNode) {
-        item.setCollapsed(false, this.settings.vimSmoothOutlineMode);
+        item.setCollapsed(false, this.settings.vimSmoothOutlineMode).catch((error: unknown) => {
+            console.error('PDF++: Failed to expand outline item', error);
+            new Notice('PDF++: Failed to expand outline item. See console for details.');
+        });
     }
 
     navigateOutline(outline: PDFOutlineViewer, forward: boolean, n?: number) {
@@ -151,7 +158,7 @@ export class VimOutlineMode extends VimBindingsMode {
                         return visited[newActiveItemIndex];
                     }
 
-                    const isLeaf = !node.children.length || (node as PDFOutlineTreeNode).collapsed;
+                    const isLeaf = !node.children.length || node.collapsed;
                     if (!isLeaf) {
                         stack.push(...node.children.slice().reverse());
                     }

@@ -9,11 +9,14 @@ import { PDFPlusComponent } from 'lib/component';
 
 export class DomManager extends PDFPlusComponent {
 	styleEl: HTMLStyleElement;
+	private documentStyles = new Map<Document, HTMLStyleElement>();
 
 	constructor(plugin: PDFPlus) {
 		super(plugin);
-		this.styleEl = plugin.registerEl(createEl('style', { attr: { id: 'pdf-plus-style' } }));
-		document.head.append(this.styleEl);
+		const doc = plugin.app.workspace.containerEl.ownerDocument;
+		this.styleEl = plugin.registerEl(doc.createElement('style'));
+		this.styleEl.id = 'pdf-plus-style';
+		doc.head.append(this.styleEl);
 	}
 
 	update() {
@@ -33,16 +36,33 @@ export class DomManager extends PDFPlusComponent {
 
 		this.updateStyleEl();
 
-		this.updateClass('pdf-plus-click-embed-to-open-link', this.settings.dblclickEmbedToOpenLink);
-		this.updateClass('pdf-plus-backlink-selection-highlight', this.settings.selectionBacklinkVisualizeStyle === 'highlight');
-		this.updateClass('pdf-plus-backlink-selection-underline', this.settings.selectionBacklinkVisualizeStyle === 'underline');
+		this.registerDocument(this.styleEl.ownerDocument);
+		this.app.workspace.iterateAllLeaves((leaf) => this.registerDocument(leaf.containerEl.ownerDocument));
+		this.registerEvent(this.app.workspace.on('window-open', (_, win) => this.registerDocument(win.document)));
+		this.registerEvent(this.app.workspace.on('window-close', (_, win) => this.documentStyles.delete(win.document)));
+		this.register(() => {
+			for (const [doc, style] of this.documentStyles) {
+				if (style !== this.styleEl) style.remove();
+				doc.body.removeClass('pdf-plus-click-embed-to-open-link', 'pdf-plus-backlink-selection-highlight', 'pdf-plus-backlink-selection-underline');
+			}
+			this.documentStyles.clear();
+		});
 
 		this.app.workspace.trigger('css-change');
 	}
 
-	updateClass(className: string, condition: boolean) {
-		document.body.toggleClass(className, condition);
-		this.register(() => document.body.removeClass(className));
+	private registerDocument(doc: Document) {
+		if (this.documentStyles.has(doc)) return;
+		const style = doc === this.styleEl.ownerDocument ? this.styleEl : doc.createElement('style');
+		if (style !== this.styleEl) {
+			style.id = this.styleEl.id;
+			style.textContent = this.styleEl.textContent;
+			doc.head.append(style);
+		}
+		this.documentStyles.set(doc, style);
+		doc.body.toggleClass('pdf-plus-click-embed-to-open-link', this.settings.dblclickEmbedToOpenLink);
+		doc.body.toggleClass('pdf-plus-backlink-selection-highlight', this.settings.selectionBacklinkVisualizeStyle === 'highlight');
+		doc.body.toggleClass('pdf-plus-backlink-selection-underline', this.settings.selectionBacklinkVisualizeStyle === 'underline');
 	}
 
 	updateStyleEl() {
@@ -221,7 +241,7 @@ export class DomManager extends PDFPlusComponent {
 				colorVarName = specificColorVarName;
 			}
 		}
-		const rgbString = getComputedStyle(document.body).getPropertyValue(colorVarName); // "R, G, B"
+		const rgbString = activeDocument.win.getComputedStyle(activeDocument.body).getPropertyValue(colorVarName); // "R, G, B"
 		const rgbColor = rgbStringToObject(rgbString);
 		return rgbColor;
 	}

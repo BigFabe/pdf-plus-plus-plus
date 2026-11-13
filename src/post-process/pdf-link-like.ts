@@ -1,4 +1,4 @@
-import { App, HoverParent, HoverPopover, Keymap } from 'obsidian';
+import { App, HoverParent, HoverPopover, Keymap, Notice } from 'obsidian';
 
 import PDFPlus from 'main';
 import { PDFPlusLib } from 'lib';
@@ -96,10 +96,15 @@ abstract class PDFLinkLikePostProcessor implements HoverParent {
             event.preventDefault(); // avoid being executed multiple times
             event.stopPropagation(); // prevent the default click handler from being called
 
-            const linktext = await this.getLinkText(event);
-            if (linktext === null) return;
+            try {
+                const linktext = await this.getLinkText(event);
+                if (linktext === null) return;
 
-            app.workspace.openLinkText(linktext, this.sourcePath, newLeaf);
+                await app.workspace.openLinkText(linktext, this.sourcePath, newLeaf);
+            } catch (error) {
+                new Notice(`${plugin.manifest.name}: Failed to open the PDF link.`);
+                console.error(error);
+            }
         }, { capture: true }); // capture to ensure it's called before the default click handler
     }
 
@@ -111,28 +116,27 @@ abstract class PDFLinkLikePostProcessor implements HoverParent {
         const { app, plugin, targetEl } = this;
 
         plugin.registerDomEvent(targetEl, 'mouseover', async (event) => {
-            if (await this.customHover(event)) return;
-
-            let linktext: string | null = null;
             try {
-                linktext = await this.getLinkText(event);
-            } catch (e) {
-                if (e.name === 'UnknownErrorException') {
-                    return console.warn(`${this.plugin.manifest.name}: The destination was not found in this document.`);
+                if (await this.customHover(event)) return;
+
+                const linktext = await this.getLinkText(event);
+                if (linktext === null) return;
+
+                app.workspace.trigger('hover-link', {
+                    event,
+                    source: this.hoverLinkSourceId,
+                    hoverParent: this,
+                    targetEl,
+                    linktext,
+                    sourcePath: this.sourcePath
+                });
+            } catch (error) {
+                if (error?.name === 'UnknownErrorException') {
+                    return console.warn(`${plugin.manifest.name}: The destination was not found in this document.`);
                 }
-                throw e;
+                new Notice(`${plugin.manifest.name}: Failed to preview the PDF link.`);
+                console.error(error);
             }
-
-            if (linktext === null) return;
-
-            app.workspace.trigger('hover-link', {
-                event,
-                source: this.hoverLinkSourceId,
-                hoverParent: this,
-                targetEl,
-                linktext,
-                sourcePath: this.sourcePath
-            });
         });
     }
 

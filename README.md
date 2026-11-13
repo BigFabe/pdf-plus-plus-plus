@@ -1,12 +1,11 @@
-<h1 align="center">Obsidian PDF++</h1>
+<h1 align="center">PDF+++</h1>
 <p align="center">
-<img src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%238a5cf5&label=downloads&query=%24%5B%22pdf-plus%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json" alt="Obsidian Downloads">
+<img src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%238a5cf5&label=upstream%20downloads&query=%24%5B%22pdf-plus%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json" alt="Upstream PDF++ downloads">
 </p>
 
-> [!note] 
-> I’m currently working on PDF++ v1.0.0. Because this release involves extensive refactoring, you probably won’t see any major updates for a few months—aside from minor bug fixes—until I can ship the 1.0.0 beta. But don’t worry: there’s a lot going on under the hood!
-> 
-> ⭐ Star this repo to show your support!
+PDF+++ is a maintenance fork of [Ryota Ushio's PDF++](https://github.com/RyotaUshio/obsidian-pdf-plus), with compatibility fixes, improved text selection and safer asynchronous operations. See [REVIEW.md](REVIEW.md) for the changes and [SECURITY.md](SECURITY.md) for permissions and limitations.
+
+The fork keeps its existing plugin ID `pdf-plus-plus` and display name PDF+++. Do not enable it alongside the original PDF++: both patch the same viewer internals. The documentation below describes the original PDF++ features.
 
 This is an [Obsidian.md](https://obsidian.md) plugin for a better PDF experience. Specifically:
 
@@ -396,6 +395,8 @@ Therefore, this feature should be considered to be a temporary workaround until 
 For now, it does not save annotations in PDF itself. However, it says it will be able to do so once Obsidian's PDF.js version is updated to 4.x.
 For those who prefer in-file annotations to backlink highlighting, this might be a better solution.
 Fortunately, it seems to be compatible with PDF++, meaning you can use features from both of two plugins at the same time although some of PDF++ features (e.g. hover over a highlight to preview backlinks, double-click on a highlight to open backlinks, etc.) are not available for annotations made by the Pdf Annotator plugin.
+
+Security and permissions: see [SECURITY.md](SECURITY.md). The community review findings and their disposition are tracked in [REVIEW.md](REVIEW.md).
 
 ## Installation
 

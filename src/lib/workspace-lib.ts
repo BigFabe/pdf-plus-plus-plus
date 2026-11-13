@@ -101,21 +101,19 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
         if (this.plugin.classes.PDFView) {
             return this.app.workspace.getActiveViewOfType(this.plugin.classes.PDFView);
         }
-        // I believe using `activeLeaf` is inevitable here.
-        const view = this.app.workspace.activeLeaf?.view;
+        const view = this.app.workspace.getActiveViewOfType(View);
         if (view && this.lib.isPDFView(view)) return view;
         return null;
     }
 
     getActiveCanvasView(): CanvasView | null {
-        // I believe using `activeLeaf` is inevitable here.
-        const view = this.app.workspace.activeLeaf?.view;
+        const view = this.app.workspace.getActiveViewOfType(View);
         if (view && this.lib.isCanvasView(view)) return view;
         return null;
     }
 
     getActiveExcalidrawView(): ExcalidrawView | null {
-        const view = this.app.workspace.activeLeaf?.view;
+        const view = this.app.workspace.getActiveViewOfType(View);
         if (view && this.lib.isExcalidrawView(view)) return view;
         return null;
     }
@@ -133,8 +131,7 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
     }
 
     getActiveGroupLeaves() {
-        // I belive using `activeLeaf` is inevitable here.
-        const activeGroup = this.app.workspace.activeLeaf?.group;
+        const activeGroup = this.app.workspace.getActiveViewOfType(View)?.leaf.group;
         if (!activeGroup) return null;
 
         return this.app.workspace.getGroupLeaves(activeGroup);
@@ -176,9 +173,8 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
             openViewState.eState.focus = !this.settings.dontActivateAfterOpenMD;
         }
         // Ignore the "dontActivateAfterOpenMD" option when opening a link in a tab in the same split as the current tab
-        // I believe using activeLeaf (which is deprecated) is inevitable here
         if (!(markdownLeaf.parentSplit instanceof WorkspaceTabs
-            && markdownLeaf.parentSplit === this.app.workspace.activeLeaf?.parentSplit)) {
+            && markdownLeaf.parentSplit === this.app.workspace.getActiveViewOfType(View)?.leaf.parentSplit)) {
             openViewState.active = !this.plugin.settings.dontActivateAfterOpenMD;
         }
 
@@ -284,12 +280,12 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
     getLeaf(paneType: ExtendedPaneType | boolean): WorkspaceLeaf {
         if (paneType === '') paneType = false;
         if (typeof paneType === 'boolean' || isPaneType(paneType)) {
-            return this.app.workspace.getLeaf(paneType as PaneType | boolean);
+            return this.app.workspace.getLeaf(paneType);
         }
         if (isFineGrainedSplitDirection(paneType)) {
-            return this.getLeafBySplit(paneType as FineGrainedSplitDirection);
+            return this.getLeafBySplit(paneType);
         }
-        return this.getLeafInSidebar(paneType as SidebarType);
+        return this.getLeafInSidebar(paneType);
     }
 
     getLeafBySplit(direction: FineGrainedSplitDirection): WorkspaceLeaf {
@@ -354,7 +350,7 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
 
         if (!Platform.isDesktopApp) {
             // on mobile, we don't need to care about new windows so just use the original method
-            this.app.workspace.revealLeaf(leaf);
+            await this.app.workspace.revealLeaf(leaf);
             return;
         }
 
@@ -415,15 +411,14 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
 
 
         // Ignore the "dontActivateAfterOpenPDF" option when opening a link in a tab in the same split as the current tab
-        // I believe using activeLeaf (which is deprecated) is inevitable here
-        if (!(sameFileLeaf.parentSplit instanceof WorkspaceTabs && sameFileLeaf.parentSplit === this.app.workspace.activeLeaf?.parentSplit)) {
+        if (!(sameFileLeaf.parentSplit instanceof WorkspaceTabs && sameFileLeaf.parentSplit === this.app.workspace.getActiveViewOfType(View)?.leaf.parentSplit)) {
             openViewState = openViewState ?? {};
             openViewState.active = !this.settings.dontActivateAfterOpenPDF;
         }
 
         if (sameFileLeaf.isVisible() && this.settings.highlightExistingTab) {
             sameFileLeaf.containerEl.addClass('pdf-plus-link-opened', 'is-highlighted');
-            setTimeout(() => sameFileLeaf.containerEl.removeClass('pdf-plus-link-opened', 'is-highlighted'), this.settings.existingTabHighlightDuration * 1000);
+            window.setTimeout(() => sameFileLeaf.containerEl.removeClass('pdf-plus-link-opened', 'is-highlighted'), this.settings.existingTabHighlightDuration * 1000);
         }
 
         const promise = this.openPDFLinkTextInLeaf(sameFileLeaf, linktext, sourcePath, openViewState);
@@ -485,7 +480,7 @@ export class WorkspaceLib extends PDFPlusLibSubmodule {
         // causes the following error: TypeError: Right-hand side of 'instanceof' is not an object.
         // The following is a workaround for this problem.
         if (root === this.app.workspace.leftSplit || root === this.app.workspace.rightSplit) {
-            const sidebar = root as (typeof this.app.workspace.leftSplit | typeof this.app.workspace.rightSplit);
+            const sidebar = root as typeof this.app.workspace.leftSplit;
             const eventRef = this.app.workspace.on('active-leaf-change', (anotherLeaf) => {
                 if (anotherLeaf && anotherLeaf.getRoot() !== sidebar) {
                     sidebar.collapse();

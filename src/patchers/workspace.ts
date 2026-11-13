@@ -1,4 +1,4 @@
-import { OpenViewState, PaneType, Workspace, parseLinktext, Platform } from 'obsidian';
+import { Notice, OpenViewState, PaneType, Workspace, parseLinktext, Platform } from 'obsidian';
 import { around } from 'monkey-around';
 
 import PDFPlus from 'main';
@@ -29,6 +29,11 @@ export const patchWorkspace = (plugin: PDFPlus) => {
                             if (!plugin.settings.openPDFWithDefaultAppAndObsidian) {
                                 return promise;
                             }
+                            // The core open below owns the returned promise; report this parallel OS action here.
+                            promise.catch((error) => {
+                                new Notice(`${plugin.manifest.name}: Failed to open the PDF in the default app.`);
+                                console.error(error);
+                            });
                         }
 
                         if (plugin.settings.singleTabForSinglePDF) {

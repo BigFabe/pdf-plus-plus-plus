@@ -129,8 +129,10 @@ export default class PDFPlus extends Plugin {
 		this.registerAutoCheckForUpdates();
 	}
 
-	async onunload() {
-		await this.cleanUpResources();
+	onunload() {
+		this.cleanUpResources().catch((error) => {
+			console.error(`${this.manifest.name}: Failed to clean up resources on unload.`, error);
+		});
 	}
 
 	/** Perform clean-ups not registered explicitly. */
@@ -188,6 +190,8 @@ export default class PDFPlus extends Plugin {
 
 	async loadSettings() {
 		this.settings = Object.assign(this.getDefaultSettings(), await this.loadData());
+		// Older releases enabled background requests by default, without explicit consent.
+		if (!this.settings.updateCheckConsent) this.settings.autoCheckForUpdates = false;
 
 		this.setCitationIdRegex();
 
@@ -221,7 +225,7 @@ export default class PDFPlus extends Plugin {
 
 		for (const cmd of this.settings.copyCommands) {
 			// @ts-ignore
-			if (cmd.hasOwnProperty('format')) {
+			if (Object.prototype.hasOwnProperty.call(cmd, 'format')) {
 				// @ts-ignore
 				cmd.template = cmd.format;
 				// @ts-ignore
@@ -229,7 +233,7 @@ export default class PDFPlus extends Plugin {
 			}
 		}
 
-		if (this.settings.hasOwnProperty('aliasFormat')) {
+		if (Object.prototype.hasOwnProperty.call(this.settings, 'aliasFormat')) {
 			this.settings.displayTextFormats.push({
 				name: 'Custom',
 				// @ts-ignore
@@ -239,7 +243,7 @@ export default class PDFPlus extends Plugin {
 			delete this.settings.aliasFormat;
 		}
 
-		if (this.settings.hasOwnProperty('showCopyLinkToSearchInContextMenu')) {
+		if (Object.prototype.hasOwnProperty.call(this.settings, 'showCopyLinkToSearchInContextMenu')) {
 			const searchSectionConfig = this.settings.contextMenuConfig.find(({ id }) => id === 'search');
 			if (searchSectionConfig) {
 				// @ts-ignore
@@ -267,7 +271,7 @@ export default class PDFPlus extends Plugin {
 	}
 
 	private renameSetting(oldId: string, newId: keyof PDFPlusSettings) {
-		if (this.settings.hasOwnProperty(oldId)) {
+		if (Object.prototype.hasOwnProperty.call(this.settings, oldId)) {
 			// @ts-ignore
 			this.settings[newId] = this.settings[oldId];
 			// @ts-ignore
@@ -303,7 +307,7 @@ export default class PDFPlus extends Plugin {
 	}
 
 	checkDeprecatedSettings() {
-		if (document.querySelectorAll('.pdf-plus-deprecated-setting-notice').length > 0) {
+		if (activeDocument.querySelectorAll('.pdf-plus-deprecated-setting-notice').length > 0) {
 			return;
 		}
 
@@ -317,8 +321,9 @@ export default class PDFPlus extends Plugin {
 					el.append('PDF++: ');
 					setMessage(el, linkEl);
 				}));
-			notice.containerEl.addClass('pdf-plus-deprecated-setting-notice');
-			notice.messageEl.setCssStyles({
+			const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
+			(notice.containerEl ?? messageEl).addClass('pdf-plus-deprecated-setting-notice');
+			messageEl.setCssStyles({
 				color: 'var(--text-warning)',
 			});
 		};
@@ -391,7 +396,7 @@ export default class PDFPlus extends Plugin {
 		settingIdsToCheck.forEach(checkNamedTemplate);
 	}
 
-	async checkDataviewInlineFields() {
+	checkDataviewInlineFields() {
 		withFilesWithInlineFields(this, (files) => {
 			if (files.length === 0) {
 				this.requiresDataviewInlineFieldsMigration = false;
@@ -417,8 +422,9 @@ export default class PDFPlus extends Plugin {
 				)),
 				0
 			);
-			notice.containerEl.addClass('pdf-plus-deprecated-setting-notice');
-			notice.messageEl.setCssStyles({
+			const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
+			(notice.containerEl ?? messageEl).addClass('pdf-plus-deprecated-setting-notice');
+			messageEl.setCssStyles({
 				color: 'var(--text-warning)',
 			});
 		});
@@ -468,7 +474,12 @@ export default class PDFPlus extends Plugin {
 			let menuShown = false;
 
 			this.autoFocusToggleIconEl = this.addRibbonIcon(this.settings.autoFocusIconName, `${this.manifest.name}: Toggle auto-focus`, () => {
-				if (!menuShown) this.toggleAutoFocus();
+				if (!menuShown) {
+					this.toggleAutoFocus().catch((error) => {
+						console.error(`${this.manifest.name}: Failed to save auto-focus settings.`, error);
+						new Notice(`${this.manifest.name}: Could not save auto-focus settings. See console for details.`);
+					});
+				}
 			});
 			this.autoFocusToggleIconEl.toggleClass('is-active', this.settings.autoFocus);
 
@@ -493,7 +504,12 @@ export default class PDFPlus extends Plugin {
 			let menuShown = false;
 
 			this.autoPasteToggleIconEl = this.addRibbonIcon(this.settings.autoPasteIconName, `${this.manifest.name}: Toggle auto-paste`, () => {
-				if (!menuShown) this.toggleAutoPaste();
+				if (!menuShown) {
+					this.toggleAutoPaste().catch((error) => {
+						console.error(`${this.manifest.name}: Failed to save auto-paste settings.`, error);
+						new Notice(`${this.manifest.name}: Could not save auto-paste settings. See console for details.`);
+					});
+				}
 			});
 			this.autoPasteToggleIconEl.toggleClass('is-active', this.settings.autoPaste);
 			this.registerDomEvent(this.autoPasteToggleIconEl, 'contextmenu', (evt) => {
@@ -536,7 +552,7 @@ export default class PDFPlus extends Plugin {
 		this.settings.autoFocus = enable;
 
 		if (this.settings.autoFocus && this.settings.autoPaste) {
-			this.toggleAutoPaste(false, false);
+			await this.toggleAutoPaste(false, false);
 		}
 
 		if (save ?? true) {
@@ -550,7 +566,7 @@ export default class PDFPlus extends Plugin {
 		this.settings.autoPaste = enable;
 
 		if (this.settings.autoPaste && this.settings.autoFocus) {
-			this.toggleAutoFocus(false, false);
+			await this.toggleAutoFocus(false, false);
 		}
 
 		if (save ?? true) {
@@ -630,7 +646,10 @@ export default class PDFPlus extends Plugin {
 				// @ts-ignore
 				if (!this.classes.PDFEmbed) this.classes.PDFEmbed = embed.constructor;
 				if (!this.patchStatus.pdfInternals) {
-					patchPDFInternals(this, embed.viewer);
+					patchPDFInternals(this, embed.viewer).catch((error) => {
+						console.error(`${this.manifest.name}: Failed to patch PDF embed.`, error);
+						new Notice(`${this.manifest.name}: Could not initialize PDF embed enhancements. See console for details.`);
+					});
 				}
 			}
 
@@ -642,7 +661,10 @@ export default class PDFPlus extends Plugin {
 					&& (evt.target.closest('.pdf-embed[src] > .pdf-container') || evt.target.closest('.pdf-cropped-embed'))) {
 					const linktext = file.path + subpath;
 					// we don't need sourcePath because linktext is the full path
-					this.app.workspace.openLinkText(linktext, '', Keymap.isModEvent(evt));
+					this.app.workspace.openLinkText(linktext, '', Keymap.isModEvent(evt)).catch((error) => {
+						console.error(`${this.manifest.name}: Failed to open PDF link "${linktext}".`, error);
+						new Notice(`${this.manifest.name}: Could not open PDF link. See console for details.`);
+					});
 					evt.preventDefault();
 				}
 			});
@@ -710,7 +732,10 @@ export default class PDFPlus extends Plugin {
 				if (this.settings.syncWithDefaultApp && leaf && this.lib.isPDFView(leaf.view)) {
 					const file = leaf.view.file;
 					if (file) {
-						this.app.openWithDefaultApp(file.path);
+						this.app.openWithDefaultApp(file.path).catch((error) => {
+							console.error(`${this.manifest.name}: Failed to open "${file.path}" in the default app.`, error);
+							new Notice(`${this.manifest.name}: Could not open PDF in the default app. See console for details.`);
+						});
 						if (this.settings.focusObsidianAfterOpenPDFWithDefaultApp) {
 							focusObsidian();
 						}
@@ -731,31 +756,49 @@ export default class PDFPlus extends Plugin {
 		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
 			if (file instanceof TFile && this.settings.newFileTemplatePath === oldPath) {
 				this.settings.newFileTemplatePath = file.path;
-				this.saveSettings();
+				this.saveSettings().catch((error) => {
+					console.error(`${this.manifest.name}: Failed to save renamed template path.`, error);
+					new Notice(`${this.manifest.name}: Could not save the new template path. See console for details.`);
+				});
 			}
 		}));
 		this.registerEvent(this.app.vault.on('delete', (file) => {
 			if (file instanceof TFile && this.settings.newFileTemplatePath === file.path) {
 				this.settings.newFileTemplatePath = '';
-				this.saveSettings();
+				this.saveSettings().catch((error) => {
+					console.error(`${this.manifest.name}: Failed to save deleted template path.`, error);
+					new Notice(`${this.manifest.name}: Could not save the cleared template path. See console for details.`);
+				});
 			}
 		}));
 
 		// Keep the vimrc content up-to-date
-		this.registerEvent(this.app.vault.on('modify', async (file) => {
+		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (file instanceof TFile && file.path === this.settings.vimrcPath) {
-				this.vimrc = await this.app.vault.read(file);
+				this.app.vault.read(file).then((content) => {
+					this.vimrc = content;
+				}).catch((error) => {
+					console.error(`${this.manifest.name}: Failed to reload vimrc.`, error);
+					new Notice(`${this.manifest.name}: Could not reload vimrc. See console for details.`);
+				});
 			}
 		}));
 
 		// Clean up other resources when the app quits
-		this.registerEvent(this.app.workspace.on('quit', async () => {
-			await this.cleanUpResources();
+		this.registerEvent(this.app.workspace.on('quit', () => {
+			this.cleanUpResources().catch((error) => {
+				console.error(`${this.manifest.name}: Failed to clean up resources on quit.`, error);
+			});
 		}));
 
 		// 
 		// https://github.com/RyotaUshio/obsidian-pdf-plus/issues/285
-		this.registerEvent(this.app.workspace.on('editor-drop', (evt, editor, info) => this.lib.dummyFileManager.createDummyFilesOnEditorDrop(evt, editor, info)));
+		this.registerEvent(this.app.workspace.on('editor-drop', (evt, editor, info) => {
+			this.lib.dummyFileManager.createDummyFilesOnEditorDrop(evt, editor, info).catch((error) => {
+				console.error(`${this.manifest.name}: Failed to create dummy PDF files on drop.`, error);
+				new Notice(`${this.manifest.name}: Could not create dummy PDF files. See console for details.`);
+			});
+		}));
 	}
 
 	registerOneTimeEvent<T extends Events>(events: T, ...[evt, callback, ctx]: OverloadParameters<T['on']>) {
@@ -767,7 +810,7 @@ export default class PDFPlus extends Plugin {
 	}
 
 	async checkForUpdatesIfNeeded() {
-		if (!this.settings.autoCheckForUpdates) return;
+		if (!this.settings.autoCheckForUpdates || !this.settings.updateCheckConsent) return;
 
 		const result = await this.lib.checkForUpdates({
 			minHoursSinceRelease: 24,
@@ -788,8 +831,13 @@ export default class PDFPlus extends Plugin {
 	}
 
 	private registerAutoCheckForUpdates() {
-		this.checkForUpdatesIfNeeded();
-		this.registerInterval(window.setInterval(() => this.checkForUpdatesIfNeeded(), 1000 * 60 * 60 * 24));
+		const checkForUpdates = () => {
+			this.checkForUpdatesIfNeeded().catch((error) => {
+				console.error(`${this.manifest.name}: Failed to check for updates.`, error);
+			});
+		};
+		checkForUpdates();
+		this.registerInterval(window.setInterval(checkForUpdates, 1000 * 60 * 60 * 24));
 	}
 
 	private registerHoverLinkSources() {
@@ -864,7 +912,10 @@ export default class PDFPlus extends Plugin {
 
 	obsidianProtocolHandler(params: ObsidianProtocolData) {
 		if ('create-dummy' in params) {
-			return this.lib.dummyFileManager.createDummyFilesFromObsidianUrl(params);
+			return this.lib.dummyFileManager.createDummyFilesFromObsidianUrl(params).catch((error) => {
+				console.error(`${this.manifest.name}: Failed to create dummy PDF file from Obsidian URL.`, error);
+				new Notice(`${this.manifest.name}: Could not create dummy PDF file. See console for details.`);
+			});
 		}
 
 		if ('setting' in params) {
@@ -899,8 +950,10 @@ export default class PDFPlus extends Plugin {
 	}
 
 	requireModKeyForLinkHover(id = 'pdf-plus') {
-		// @ts-ignore
-		return this.app.internalPlugins.plugins['page-preview'].instance.overrides[id]
+		const pagePreview = this.app.internalPlugins.plugins['page-preview']?.instance;
+		// Current Obsidian uses options; older versions stored these values in overrides.
+		return pagePreview?.options?.[id]
+			?? pagePreview?.overrides?.[id]
 			?? this.app.workspace.hoverLinkSources[id]?.defaultMod
 			?? false;
 	}

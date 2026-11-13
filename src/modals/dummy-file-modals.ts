@@ -15,7 +15,7 @@ export class DummyFileModal extends PDFPlusModal {
         super(...args);
 
         this.scope.register([], 'Enter', () => {
-            if (activeDocument.activeElement?.tagName === 'INPUT') {
+            if (this.containerEl.ownerDocument.activeElement?.tagName === 'INPUT') {
                 this.submit();
             }
         });
@@ -25,7 +25,7 @@ export class DummyFileModal extends PDFPlusModal {
         super.onOpen();
 
         const lastUsedSource = this.plugin.loadLocalStorage(DummyFileModal.LOCAL_STORAGE_KEY);
-        if (['file', 'web'].includes(lastUsedSource)) {
+        if (lastUsedSource === 'file' || lastUsedSource === 'web') {
             this.source = lastUsedSource;
         }
         this.folderPath = this.lib.dummyFileManager.getFolderPathForDummyFiles(this.app.workspace.getActiveFile());
@@ -37,7 +37,7 @@ export class DummyFileModal extends PDFPlusModal {
                 el.appendText(`You can also use ${keys.length ? (keys.map(getModifierNameInPlatform).join('+') + ' +') : ''} drag & drop to create dummy files. `);
                 el.createEl('a', { text: 'Learn more about dummy PDF files', href: 'https://ryotaushio.github.io/obsidian-pdf-plus/external-pdf-files' });
             }));
-            setTimeout(() => {
+            window.setTimeout(() => {
                 this.modalEl.insertBefore(div, this.contentEl);
             });
         });
@@ -191,7 +191,7 @@ export class DummyFileModal extends PDFPlusModal {
                     }
                     // auto-focus the last input
                     if (i === this.uris.length - 1) {
-                        setTimeout(() => text.inputEl.focus());
+                        window.setTimeout(() => text.inputEl.focus());
                     }
                 })
                 .addExtraButton((button) => {
@@ -239,8 +239,7 @@ export class DummyFileModal extends PDFPlusModal {
 
         this.plugin.saveLocalStorage(DummyFileModal.LOCAL_STORAGE_KEY, this.source);
 
-        this.createDummyFiles();
-        this.close();
+        this.createDummyFiles().then(() => this.close()).catch(this.reportError);
     }
 
     async createDummyFiles() {

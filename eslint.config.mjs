@@ -28,16 +28,27 @@ export default [{
     languageOptions: {
         globals: {
             ...globals.node,
+            ...globals.browser,
         },
 
         parser: tsParser,
-        ecmaVersion: 5,
+        ecmaVersion: "latest",
         sourceType: "module",
+        parserOptions: {
+            project: "./tsconfig.json",
+            tsconfigRootDir: __dirname,
+        },
     },
 
     rules: {
         "no-unused-vars": "off",
-        "no-cond-assign": "off",
+        "no-cond-assign": ["error", "except-parens"],
+        "no-restricted-globals": ["error",
+            { name: "document", message: "Use the element's ownerDocument or activeDocument for pop-out windows." },
+            { name: "setTimeout", message: "Use window.setTimeout or an explicit owner window." },
+            { name: "setInterval", message: "Use window.setInterval or an explicit owner window." },
+            { name: "alert", message: "Use an Obsidian Notice instead." },
+        ],
 
         "no-constant-condition": ["error", {
             checkLoops: false,
@@ -48,9 +59,17 @@ export default [{
         }],
 
         "@typescript-eslint/ban-ts-comment": "off",
-        "no-prototype-builtins": "off",
+        "no-prototype-builtins": "error",
         "@typescript-eslint/no-empty-function": "off",
-        "@typescript-eslint/no-this-alias": "off",
+        "@typescript-eslint/no-this-alias": "error",
+        "@typescript-eslint/no-floating-promises": "error",
+        "@typescript-eslint/no-misused-promises": "error",
+        "@typescript-eslint/await-thenable": "error",
+        "@typescript-eslint/prefer-promise-reject-errors": "error",
+        "@typescript-eslint/no-unnecessary-type-assertion": "error",
+        "@typescript-eslint/no-redundant-type-constituents": "error",
+        "@typescript-eslint/no-duplicate-type-constituents": "error",
+        "@typescript-eslint/no-implied-eval": "error",
 
         "@typescript-eslint/no-inferrable-types": ["error", {
             ignoreParameters: true,
@@ -68,7 +87,9 @@ export default [{
         "no-extra-semi": "error",
         "no-unexpected-multiline": "error",
         "no-unreachable": "error",
+        // PDF.js/Obsidian private APIs and optional plugin APIs lack complete public types.
+        // Keep their explicit escape hatches rather than inventing inaccurate signatures.
         "@typescript-eslint/no-explicit-any": "off",
-        "@typescript-eslint/no-unused-expressions": "off",
+        "@typescript-eslint/no-unused-expressions": "error",
     },
 }];

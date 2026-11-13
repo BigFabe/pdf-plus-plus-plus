@@ -22,8 +22,8 @@ export class PDFPageDeleteModal extends PDFPlusModal {
 
     then(callback: () => any) {
         this.#promise.then((value) => {
-            if (value) callback();
-        });
+            if (value) return callback();
+        }).catch(this.reportError);
         return this;
     }
 
@@ -87,8 +87,8 @@ export type PageLabelUpdateMethod = keyof typeof PAGE_LABEL_UPDATE_METHODS;
 
 
 export class PDFComposerModal extends PDFPlusModal {
-    #promise: Promise<{ pageLabelUpdateMethod: 'keep' | 'update', inPlace: boolean } | null>;
-    #resolve: (options: { pageLabelUpdateMethod: 'keep' | 'update', inPlace: boolean } | null) => void;
+    #promise: Promise<{ pageLabelUpdateMethod: PageLabelUpdateMethod, inPlace: boolean } | null>;
+    #resolve: (options: { pageLabelUpdateMethod: PageLabelUpdateMethod, inPlace: boolean } | null) => void;
 
     askPageLabelUpdateMethod: boolean;
     defaultMethod: PageLabelUpdateMethod;
@@ -122,9 +122,9 @@ export class PDFComposerModal extends PDFPlusModal {
             if (options) {
                 const { pageLabelUpdateMethod, inPlace } = options;
                 const keepLabels = pageLabelUpdateMethod === 'keep';
-                callback(keepLabels, inPlace);
+                return callback(keepLabels, inPlace);
             }
-        });
+        }).catch(this.reportError);
     }
 
     onOpen() {
@@ -173,7 +173,7 @@ export class PDFComposerModal extends PDFPlusModal {
                         }
                         this.close();
                     });
-                setTimeout(() => button.buttonEl.focus());
+                window.setTimeout(() => button.buttonEl.focus());
             })
             .addButton((button) => {
                 button
@@ -213,12 +213,12 @@ export class PDFCreateModal extends PDFPlusModal {
             .setName('Page size')
             .addDropdown((dropdown) => {
                 Object.keys(PageSizes)
-                    .forEach((key) => dropdown.addOption(key, key));
+                    .forEach((key) => { dropdown.addOption(key, key); });
 
                 dropdown
                     .setValue(this.pageSize)
                     .onChange((value) => {
-                        if (PageSizes.hasOwnProperty(value)) {
+                        if (Object.prototype.hasOwnProperty.call(PageSizes, value)) {
                             this.pageSize = value as keyof typeof PageSizes;
                         }
                     });
@@ -244,13 +244,13 @@ export class PDFCreateModal extends PDFPlusModal {
                     .setButtonText('Create')
                     .setCta()
                     .then((button) => {
-                        setTimeout(() => button.buttonEl.focus());
+                        window.setTimeout(() => button.buttonEl.focus());
                     })
-                    .onClick(async () => {
-                        this.close();
+                    .onClick(this.handleAsync(async () => {
                         const doc = await this.createPDFDocument();
-                        this.next.forEach((callback) => callback(doc));
-                    });
+                        for (const callback of this.next) await callback(doc);
+                        this.close();
+                    }));
             })
             .addButton((button) => {
                 button

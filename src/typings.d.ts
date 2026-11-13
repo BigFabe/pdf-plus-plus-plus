@@ -43,6 +43,15 @@ declare global {
         };
     }
 
+    interface CaretPosition {
+        readonly offsetNode: Node;
+        readonly offset: number;
+    }
+
+    interface CaretPositionFromPointOptions {
+        shadowRoots?: ShadowRoot[];
+    }
+
     interface Document {
         caretPositionFromPoint(x: number, y: number, options?: CaretPositionFromPointOptions): CaretPosition | null;
     }
@@ -730,7 +739,7 @@ interface SearchResultDom {
 }
 
 interface SearchResultFileDom {
-    onMatchRender: (...args: any[]) => any | null;
+    onMatchRender: (...args: any[]) => unknown;
     collapsible: boolean;
     collapsed: boolean;
     extraContext: boolean;
@@ -786,7 +795,7 @@ interface SearchResultItemDom {
         hidden: boolean;
         next: boolean;
     };
-    onMatchRender: (...args: any[]) => any | null;
+    onMatchRender: (...args: any[]) => unknown;
     parent?: SearchResultFileDom; // same as parentDom
 
     onResultClick(evt: Event): void;
@@ -1119,6 +1128,8 @@ declare module 'obsidian' {
             plugins: {
                 'page-preview': {
                     instance: {
+                        options?: Record<string, boolean>;
+                        overrides?: Record<string, boolean>;
                         onLinkHover(hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: any): void;
                     }
                     enabled: boolean;
@@ -1143,7 +1154,7 @@ declare module 'obsidian' {
         embedRegistry: EmbedRegistry;
         openWithDefaultApp(path: string): Promise<void>;
         getObsidianUrl(file: TFile): string;
-        loadLocalStorage(key: string): NonNullable<any> | null;
+        loadLocalStorage(key: string): unknown;
         /**
          * @param key 
          * @param value It can be anything that can be serialized to JSON, 
@@ -1305,7 +1316,7 @@ declare module 'obsidian' {
         transition(): void;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Declaration merging must retain the generic parameter of Obsidian's interface.
     interface AbstractTextComponent<T> {
         changeCallback?: (value: string) => any;
     }
@@ -1321,7 +1332,7 @@ declare module 'obsidian' {
         // and as a result, the keymap may not work for some non-US keyboards (e.g. JIS).
         // Setting `modifiers` to `null` is undocumented but makes this keymap work regardless of modifiers, thereby fixing the issue.
         register(modifiers: Modifier[] | null, key: string | null, func: KeymapEventListener): KeymapEventHandler;
-        handleKey(evt: KeyboardEvent, info: KeymapInfo): false | any;
+        handleKey(evt: KeyboardEvent, info: KeymapInfo): any;
     }
 
     interface KeymapEventHandler {

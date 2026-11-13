@@ -1,4 +1,4 @@
-import { HoverParent, parseLinktext } from 'obsidian';
+import { HoverParent, Notice, parseLinktext } from 'obsidian';
 import { around } from 'monkey-around';
 
 import PDFPlus from 'main';
@@ -14,12 +14,16 @@ export const patchPagePreview = (plugin: PDFPlus): boolean => {
 
     plugin.register(around(pagePreviewInstance, {
         onLinkHover(old) {
+            // Hover state is an extensible, undocumented core/plugin payload.
             return function (hoverParent: HoverParent, targetEl: HTMLElement | null, linktext: string, sourcePath: string, state: any): void {
                 const { path: linkpath, subpath } = parseLinktext(linktext);
                 const file = app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
 
                 if ((!sourcePath || sourcePath.endsWith('.pdf')) && plugin.settings.hoverHighlightAction === 'open' && state?.isTriggeredFromBacklinkVisualizer) {
-                    lib.workspace.openMarkdownLinkFromPDF(linktext, sourcePath, false, { line: state.scroll });
+                    lib.workspace.openMarkdownLinkFromPDF(linktext, sourcePath, false, { line: state.scroll }).catch((error) => {
+                        new Notice(`${plugin.manifest.name}: Failed to open the backlink.`);
+                        console.error(error);
+                    });
                     return;
                 }
 
@@ -27,7 +31,11 @@ export const patchPagePreview = (plugin: PDFPlus): boolean => {
                     if (plugin.settings.hoverPDFLinkToOpen) {
                         // If the target PDF is already opened in a tab, open PDF link in that tab
                         // instead of showing popover preview
-                        const { exists } = lib.workspace.openPDFLinkTextInExistingLeafForTargetPDF(linktext, sourcePath, undefined, file);
+                        const { exists, promise } = lib.workspace.openPDFLinkTextInExistingLeafForTargetPDF(linktext, sourcePath, undefined, file);
+                        promise.catch((error) => {
+                            new Notice(`${plugin.manifest.name}: Failed to open the PDF link.`);
+                            console.error(error);
+                        });
                         if (exists) return;
                     }
 

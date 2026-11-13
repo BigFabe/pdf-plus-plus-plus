@@ -14,12 +14,13 @@ export class MarkdownModal extends PDFPlusModal {
     }
 
     onOpen() {
+        super.onOpen();
         MarkdownRenderer.render(
             this.app,
             this.markdown,
             this.contentEl.createDiv('markdown-rendered'),
             '',
             this.component
-        );
+        ).catch(this.reportError);
     }
 }

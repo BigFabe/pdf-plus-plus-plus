@@ -1,5 +1,5 @@
 import { Modifier } from 'obsidian';
-import { App, Component, Keymap, Platform } from 'obsidian';
+import { App, Component, Keymap, Notice, Platform } from 'obsidian';
 
 
 export function hookInternalLinkMouseEventHandlers(app: App, containerEl: HTMLElement, sourcePath: string) {
@@ -8,7 +8,10 @@ export function hookInternalLinkMouseEventHandlers(app: App, containerEl: HTMLEl
             evt.preventDefault();
             const linktext = el.getAttribute('href');
             if (linktext) {
-                app.workspace.openLinkText(linktext, sourcePath, Keymap.isModEvent(evt));
+                app.workspace.openLinkText(linktext, sourcePath, Keymap.isModEvent(evt)).catch((error) => {
+                    console.error('PDF++: Failed to open internal link.', error);
+                    new Notice('PDF++: Could not open internal link. See console for details.');
+                });
             }
         });
 
@@ -152,7 +155,7 @@ export function showChildElOnParentElHover(config: {
             component.register(() => childEl && removeChildEl(childEl));
             component.load();
 
-            const requestCheck = () => setTimeout(() => {
+            const requestCheck = () => window.setTimeout(() => {
                 if (!isParentHovered && !isChildHovered) {
                     component.unload();
                 }
@@ -225,18 +228,21 @@ export function selectDoubleClickedWord(evt: MouseEvent) {
     const doc = evt.doc;
 
     const selection = doc.getSelection();
-    if (!selection) return;
+    // dblclick fires after release: preserve the browser's word/word-drag selection.
+    // Recreating it at the final pointer position would select only the last word.
+    if (!selection || !selection.isCollapsed) return;
 
     let range = null;
 
-    if (doc.caretRangeFromPoint) {
-        range = doc.caretRangeFromPoint(evt.clientX, evt.clientY);
-    } else if (doc.caretPositionFromPoint) {
+    if (doc.caretPositionFromPoint) {
         const pos = doc.caretPositionFromPoint(evt.clientX, evt.clientY);
         if (!pos) return;
         range = doc.createRange();
         range.setStart(pos.offsetNode, pos.offset);
         range.collapse(true);
+    } else if (doc.caretRangeFromPoint) {
+        // Older Electron/WebKit versions only provide the legacy caret API.
+        range = doc.caretRangeFromPoint(evt.clientX, evt.clientY);
     }
 
     if (!range) return;

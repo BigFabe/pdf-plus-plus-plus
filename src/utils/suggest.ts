@@ -1,5 +1,5 @@
 
-import { AbstractInputSuggest, App, Command, FuzzyMatch, SearchResultContainer, TFile, TFolder, prepareFuzzySearch, renderResults, sortSearchResults } from 'obsidian';
+import { AbstractInputSuggest, App, Command, FuzzyMatch, SearchResultContainer, Notice, TFile, TFolder, prepareFuzzySearch, renderResults, sortSearchResults } from 'obsidian';
 
 import PDFPlus from 'main';
 import { PDFPlusSettingTab } from 'settings';
@@ -23,7 +23,7 @@ export abstract class FuzzyInputSuggest<T> extends AbstractInputSuggest<FuzzyMat
 	constructor(app: App, inputEl: HTMLInputElement, options?: Partial<FuzzyInputSuggestOptions>) {
 		super(app, inputEl);
 		this.inputEl = inputEl;
-        this.options = Object.assign(DEFAULT_FUZZY_INPUT_SUGGEST_OPTIONS, options);
+        this.options = { ...DEFAULT_FUZZY_INPUT_SUGGEST_OPTIONS, ...options };
 	}
 
 	abstract getItems(): T[];
@@ -129,7 +129,10 @@ export class CommandSuggest extends AbstractInputSuggest<Command> {
 		this.plugin.settings.commandToExecuteWhenTargetNotIdentified = command.id;
 		this.inputEl.value = command.name;
 		this.close();
-		this.plugin.saveSettings();
+		this.plugin.saveSettings().catch((error) => {
+			console.error(`${this.plugin.manifest.name}: Failed to save selected command.`, error);
+			new Notice(`${this.plugin.manifest.name}: Could not save selected command. See console for details.`);
+		});
 		this.tab.redisplay();
 	}
 }

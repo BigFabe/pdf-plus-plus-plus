@@ -237,8 +237,7 @@ export class PDFFileOperator extends PDFPlusLibSubmodule {
                 })
         );
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const [_, dstFile] = await Promise.all([
+        const [, dstFile] = await Promise.all([
             this.write(srcFile.path, srcDoc, true),
             this.write(dstPath, dstDoc, existOk)
         ]);
@@ -343,8 +342,8 @@ export class PDFLinkUpdater extends PDFPlusLibSubmodule {
     }
 
     getNewLinkText(oldLinktext: string, sourcePath: string, file: TFile, updater: LinkInfoUpdater) {
-        // eslint-disable-next-line prefer-const
-        let { path: linkpath, subpath } = parseLinktext(oldLinktext);
+        const { path: linkpath } = parseLinktext(oldLinktext);
+        let { subpath } = parseLinktext(oldLinktext);
 
         let oldPage: number | undefined;
         if (subpath.startsWith('#')) subpath = subpath.slice(1);
@@ -442,7 +441,7 @@ export class PDFLinkUpdater extends PDFPlusLibSubmodule {
             await this.app.vault.process(file, (data) => {
                 data = data.slice(0, position.start.offset) + newLink + data.slice(position.end.offset);
 
-                if (options!.callout) {
+                if (options.callout) {
                     // Check if this link is inside a PDF++ callout
                     const sections = this.app.metadataCache.getFileCache(file)?.sections ?? [];
                     const section = sections.find((sec) => sec.position.start.offset <= position.start.offset && position.end.offset <= sec.position.end.offset);

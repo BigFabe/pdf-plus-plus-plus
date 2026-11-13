@@ -1,4 +1,4 @@
-import { Menu } from 'obsidian';
+import { Menu, Notice } from 'obsidian';
 
 import PDFPlus from 'main';
 import { PDFPlusComponent } from 'lib/component';
@@ -43,18 +43,25 @@ export class AutoCopyMode extends PDFPlusComponent {
 
     toggle(enable?: boolean) {
         enable = enable ?? !this.settings.autoCopy;
-        enable ? this.enable() : this.disable();
+        if (enable) this.enable();
+        else this.disable();
     }
 
     enable() {
         this.settings.autoCopy = true;
-        this.plugin.saveSettings();
+        this.plugin.saveSettings().catch((error) => {
+            console.error(`${this.plugin.manifest.name}: Failed to save auto-copy settings.`, error);
+            new Notice(`${this.plugin.manifest.name}: Could not save auto-copy settings. See console for details.`);
+        });
         this.load();
     }
 
     disable() {
         this.settings.autoCopy = false;
-        this.plugin.saveSettings();
+        this.plugin.saveSettings().catch((error) => {
+            console.error(`${this.plugin.manifest.name}: Failed to save auto-copy settings.`, error);
+            new Notice(`${this.plugin.manifest.name}: Could not save auto-copy settings. See console for details.`);
+        });
         this.unload();
     }
 

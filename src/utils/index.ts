@@ -8,6 +8,7 @@ export * from './suggest';
 export * from './maps';
 export * from './html-canvas';
 export * from './events';
+export * from './pdf-line-selection';
 export * from './typescript';
 
 
@@ -93,7 +94,8 @@ export function capitalize(text: string) {
 export function getWordAt(str: string, pos: number) {
     if (pos < 0 || pos >= str.length) return '';
 
-    let from = Math.max(0, str.slice(0, pos + 1).search(/(?<=[^\s.,][\s.,]+)[^\s.,]*$/));
+    const match = str.slice(0, pos + 1).match(/[^\s.,][\s.,]+([^\s.,]*)$/);
+    let from = match ? pos + 1 - match[1].length : 0;
     str = str.slice(from);
     from = Math.max(0, str.search(/[^\s.,]/));
     str = str.slice(from);
@@ -120,7 +122,7 @@ export function getTextLayerNode(pageEl: HTMLElement, node: Node) {
     if (node.instanceOf(HTMLElement) && node.hasClass('textLayerNode')) return node;
 
     let n: Node | null = node;
-    while (n = n.parentNode) {
+    while ((n = n.parentNode)) {
         if (n === pageEl) return null;
         if (n.instanceOf(HTMLElement) && n.hasClass('textLayerNode'))
             return n;
@@ -164,7 +166,7 @@ export function getNodeAndOffsetOfTextPos(node: Node, offset: number) {
 export function* getCharacterBoundingBoxes(node: Node) {
     const iter = node.doc.createNodeIterator(node, NodeFilter.SHOW_TEXT);
     let textNode;
-    while (textNode = iter.nextNode()) {
+    while ((textNode = iter.nextNode())) {
         if (textNode.instanceOf(Text)) {
             for (let i = 0; i < textNode.length; i++) {
                 const range = textNode.doc.createRange();
@@ -302,8 +304,7 @@ export function getAndroidWebViewVersion() {
  */
 export async function getSystemInfo(): Promise<any> {
     if (window.electron) {
-         
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- Desktop-only system information; never imported on mobile.
         const os = require('os') as typeof import('os');
         return {
             'Obsidian version': window.electron.ipcRenderer.sendSync('version'),
@@ -341,7 +342,7 @@ export async function getObsidianDebugInfo(app: App) {
         'Use [[Wikilinks]]': app.vault.getConfig('useMarkdownLinks'),
         // This entry is not in Obsidian's built-in "Show debug info" command.
         // It replaces the "Base theme" entry for identifying the color scheme even if it's set to be "adapt to system"
-        'Base color scheme': document.body.hasClass('theme-dark') ? 'dark' : 'light',
+        'Base color scheme': activeDocument.body.hasClass('theme-dark') ? 'dark' : 'light',
         // This entry is not in Obsidian's built-in "Show debug info" command
         'PDF "Adapt to theme"': !!app.loadLocalStorage('pdfjs-is-themed'),
         'Community theme': themeName ? `${themeName} v${themeManifest.version}` : 'none',
@@ -536,7 +537,7 @@ export function toSingleLine(str: string, removeWhitespaceBetweenCJChars = false
  * Implementation borrowed from Obsidian's app.js
  */
 export function encodeLinktext(linktext: string) {
-    // eslint-disable-next-line no-control-regex
+    // eslint-disable-next-line no-control-regex -- Strip PDF control characters from copied text.
     return linktext.replace(/[\\\x00\x08\x0B\x0C\x0E-\x1F ]/g, (component) => encodeURIComponent(component));
 }
 
@@ -629,7 +630,8 @@ export function repeatable(func: () => any) {
 // Thank you Dataview
 // https://github.com/blacksmithgu/obsidian-dataview/blob/d05d6d6d5033c5b115420ac15532e1604bda39ef/src/api/inline-api.ts#L422
 export function evalInContext(code: string, ctx?: any) {
-    return (new Function(code.includes('await') ? '(async () => {' + code + '})()' : code)).call(ctx);
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- Trusted local Vim scripts intentionally execute JavaScript; never evaluate remote/PDF text here.
+    return (new Function(code.includes('await') ? 'return (async () => {' + code + '})()' : code)).call(ctx);
 }
 
 /**
@@ -652,7 +654,8 @@ export function walkDescendantComponents(component: Component, callback: (compon
 export async function loadComponentAsync(component: Component) {
     if (!component._loaded) {
         component._loaded = true;
-        await component.onload();
+        // Plugin subclasses may return a Promise even though Component declares void.
+        await Promise.resolve(component.onload());
         const promises = component._children.map(loadComponentAsync);
         await Promise.all(promises);
     }

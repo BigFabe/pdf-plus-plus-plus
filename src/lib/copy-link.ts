@@ -281,7 +281,6 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
 
                     const palette = this.lib.getColorPaletteFromChild(child);
                     palette?.setStatus('Link copied', this.statusDurationMs);
-                    this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
 
                     // TODO: Needs refactor
                     const result = parsePDFSubpath(subpath);
@@ -302,7 +301,8 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                             }
                         }
                     }
-                })();
+                    await this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
+                })().catch((error) => this.onCopyError(error));
             }
 
             return true;
@@ -333,7 +333,6 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                     const palette = this.lib.getColorPaletteFromChild(child);
                     // This can be redundant because the copy button already shows the status.
                     if (shouldShowStatus) palette?.setStatus('Link copied', this.statusDurationMs);
-                    this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
 
                     // TODO: Needs refactor
                     const rect = annotData?.rect;
@@ -342,7 +341,9 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                     if (typeof left === 'number' && typeof top === 'number') {
                         this.plugin.lastCopiedDestInfo = { file, destArray: [page - 1, 'XYZ', left, top, null] };
                     }
-                });
+                    await this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
+                })
+                .catch((error) => this.onCopyError(error));
         }
 
         return true;
@@ -357,8 +358,8 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
 
                 const palette = this.lib.getColorPaletteFromChild(child);
                 palette?.setStatus('Link copied', this.statusDurationMs);
-                this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
-            })();
+                await this.autoFocusOrAutoPaste(evaluated, autoPaste, palette ?? undefined);
+            })().catch((error) => this.onCopyError(error));
         }
 
         return true;
@@ -387,7 +388,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                     const { child, file, page, annotationID, rects } = result;
                     if (!annotationID || !file) return;
 
-                    setTimeout(() => {
+                    window.setTimeout(() => {
                         // After the file modification, the PDF viewer DOM is reloaded, so we need to 
                         // get the new DOM to access the newly loaded color palette instance.
                         const newPalette = this.lib.getColorPaletteFromChild(child);
@@ -404,6 +405,11 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                             }
                         }
                     }, 300);
+                })
+                .catch((error) => {
+                    palette?.setStatus('Failed to write highlight', this.statusDurationMs);
+                    console.error(`${this.plugin.manifest.name}: Failed to write PDF highlight.`, error);
+                    new Notice(`${this.plugin.manifest.name}: Could not write PDF highlight. See console for details.`);
                 });
         }
 
@@ -482,7 +488,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
 
                 palette?.setStatus('Link copied', this.statusDurationMs);
                 await this.autoFocusOrAutoPaste(text, autoPaste, palette ?? undefined);
-            })();
+            })().catch((error) => this.onCopyError(error));
         }
 
         return true;
@@ -503,7 +509,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                 this.onCopyFinish(link);
                 palette?.setStatus('Link copied', this.statusDurationMs);
                 await this.autoFocusOrAutoPaste(link, autoPaste, palette ?? undefined);
-            })();
+            })().catch((error) => this.onCopyError(error));
         }
 
         return true;
@@ -546,6 +552,10 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                         position: 'center',
                         text: evaluated
                     });
+                })
+                .catch((error) => {
+                    console.error(`${this.plugin.manifest.name}: Failed to create Canvas text from PDF annotation.`, error);
+                    new Notice(`${this.plugin.manifest.name}: Could not create Canvas text from PDF annotation. See console for details.`);
                 });
         }
 
@@ -570,15 +580,15 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
             return false;
         }
 
-        let isResolved = false;
-
-        return new Promise<boolean>((resolve) => {
-            const eventRef = this.app.workspace.on('file-open', async (file) => {
+        return new Promise<boolean>((resolve, reject) => {
+            const eventRef = this.app.workspace.on('file-open', (file) => {
                 if (file && file.extension === 'md') {
                     this.app.workspace.offref(eventRef);
-                    await this.pasteTextToFile(text, file, true);
-                    this.plugin.lastPasteFile = file;
-                    resolve(true);
+                    window.clearTimeout(timeout);
+                    this.pasteTextToFile(text, file, true).then(() => {
+                        this.plugin.lastPasteFile = file;
+                        resolve(true);
+                    }, reject);
                 }
             });
 
@@ -594,31 +604,32 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                 }
             });
 
-            this.app.commands.executeCommandById(command.id);
-
             // For commands such as "Create new note", the file-open will be triggered before long.
             // However, for commands such as "Quick switcher: Open quick switcher", the file-open will be triggered after a long time.
-            activeWindow.setTimeout(() => {
-                if (!isResolved) {
-                    const { noticeEl } = new Notice(`${this.plugin.manifest.name}: Could not find the auto-paste target markdown file within ${this.settings.autoPasteTargetDialogTimeoutSec} seconds.`);
-                    noticeEl.appendText(' Click ');
-                    noticeEl.createEl('a', { text: 'here' }, (anchorEl) => {
-                        anchorEl.addEventListener('click', () => {
-                            this.plugin.openSettingTab()
-                                .scrollTo('autoPasteTargetDialogTimeoutSec');
-                        });
+            const timeout = window.setTimeout(() => {
+                const notice = new Notice(`${this.plugin.manifest.name}: Could not find the auto-paste target markdown file within ${this.settings.autoPasteTargetDialogTimeoutSec} seconds.`);
+                const messageEl = notice.messageEl ?? notice.noticeEl; // Obsidian before 1.8.7.
+                messageEl.appendText(' Click ');
+                messageEl.createEl('a', { text: 'here' }, (anchorEl) => {
+                    anchorEl.addEventListener('click', () => {
+                        this.plugin.openSettingTab()
+                            .scrollTo('autoPasteTargetDialogTimeoutSec');
                     });
-                    noticeEl.appendText(' to change the timeout duration.');
+                });
+                messageEl.appendText(' to change the timeout duration.');
 
-                    this.app.workspace.offref(eventRef);
-                    resolve(false);
-                }
+                this.app.workspace.offref(eventRef);
+                resolve(false);
             }, this.settings.autoPasteTargetDialogTimeoutSec * 1000);
-        })
-            .then((success) => {
-                isResolved = true;
-                return success;
-            });
+
+            try {
+                this.app.commands.executeCommandById(command.id);
+            } catch (error) {
+                window.clearTimeout(timeout);
+                this.app.workspace.offref(eventRef);
+                reject(error instanceof Error ? error : new Error(String(error)));
+            }
+        });
     }
 
     async autoFocus(): Promise<boolean> {
@@ -767,7 +778,7 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
             // MarkdownView's file saving is debounced, so we need to
             // explicitly save the new data right after pasting so that
             // the backlink highlight will be visibile as soon as possible.
-            view.save();
+            await view.save();
 
             await this.updateAndRevealCursorInEditor(leaf.view, {
                 focus: this.settings.focusEditorAfterAutoPaste,
@@ -787,11 +798,14 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
                 // When the file opened in some tab, 
                 // - focus the tab and move the cursor to the end of the file if the `focusEditorAfterAutoPaste` option is on
                 // - scroll to the end of the file without focusing if `focusEditorAfterAutoPaste` option is off
-                activeWindow.setTimeout(async () => {
+                window.setTimeout(() => {
                     if (leaf.view instanceof MarkdownView) {
-                        await this.updateAndRevealCursorInEditor(leaf.view, {
+                        this.updateAndRevealCursorInEditor(leaf.view, {
                             focus: this.settings.focusEditorAfterAutoPaste,
                             goEnd: true
+                        }).catch((error) => {
+                            console.error(`${this.plugin.manifest.name}: Failed to focus editor after pasting.`, error);
+                            new Notice(`${this.plugin.manifest.name}: Text was pasted, but the editor could not be focused. See console for details.`);
                         });
                     }
                 });
@@ -832,6 +846,11 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         }
     }
 
+    private onCopyError(error: unknown) {
+        console.error(`${this.plugin.manifest.name}: PDF copy/paste failed.`, error);
+        new Notice(`${this.plugin.manifest.name}: PDF copy/paste failed. See console for details.`);
+    }
+
     watchPaste(text: string, onPaste?: () => any) {
         // watch for a manual paste for updating this.lastPasteFile
         this.plugin.registerOneTimeEvent(this.app.workspace, 'editor-paste', (evt: ClipboardEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo) => {
@@ -846,14 +865,19 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
 
             if (clipboardTextNormalized === copiedTextNormalized) {
                 this.plugin.lastPasteFile = info.file;
-                onPaste?.();
+                Promise.resolve().then(() => onPaste?.()).catch((error) => this.onCopyError(error));
             }
 
             if (info instanceof MarkdownView) {
                 // MarkdownView's file saving is debounced, so we need to
                 // explicitly save the new data right after pasting so that
                 // the backlink highlight will be visibile as soon as possible.
-                setTimeout(() => info.save());
+                window.setTimeout(() => {
+                    info.save().catch((error) => {
+                        console.error(`${this.plugin.manifest.name}: Failed to save note after pasting.`, error);
+                        new Notice(`${this.plugin.manifest.name}: Could not save note after pasting. See console for details.`);
+                    });
+                });
             }
         });
     }

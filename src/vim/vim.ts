@@ -162,13 +162,13 @@ export class VimBindings extends PDFPlusComponent {
 
     onload() {
         this.lib.workspace.iteratePDFViews((view) => {
-            view.viewer === this.viewer && (view.scope = this.vimScope);
+            if (view.viewer === this.viewer) view.scope = this.vimScope;
         });
     }
 
     onunload() {
         this.lib.workspace.iteratePDFViews((view) => {
-            view.viewer === this.viewer && (view.scope = this.viewer.scope);
+            if (view.viewer === this.viewer) view.scope = this.viewer.scope;
         });
     }
 
@@ -197,8 +197,10 @@ export class VimBindings extends PDFPlusComponent {
             const outline = this.obsidianViewer.pdfOutlineViewer;
             if (!outline.highlighted) {
                 const child = outline.children[0];
-                child.setActive(true);
-                outline.highlighted = child;
+                if (child) {
+                    child.setActive(true);
+                    outline.highlighted = child;
+                }
             }
         }
     }
@@ -226,11 +228,13 @@ export class VimBindings extends PDFPlusComponent {
         this.mapOrNoremap(modes, from, to, true);
     }
 
-    async evalUserScript(script: string) {
-        return new Promise<any>((resolve) => {
-            this.viewer.then(async (child) => {
-                const ctx = this.addChild(new UserScriptContext(this.plugin, child));
-                resolve(await ctx.run(script));
+    evalUserScript(script: string) {
+        return new Promise<unknown>((resolve, reject) => {
+            this.viewer.then((child) => {
+                Promise.resolve().then(() => {
+                    const ctx = this.addChild(new UserScriptContext(this.plugin, child));
+                    return ctx.run(script);
+                }).then(resolve, reject);
             });
         });
     }

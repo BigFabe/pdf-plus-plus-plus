@@ -1,5 +1,5 @@
 
-import { SearchMatchPart, SearchMatches, TFile } from 'obsidian';
+import { Notice, SearchMatchPart, SearchMatches, TFile } from 'obsidian';
 import { around } from 'monkey-around';
 
 import PDFPlus from 'main';
@@ -39,10 +39,9 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
             };
         },
         onUnloadFile(old) {
-            return async function (file: TFile) {
-                const self = this as BacklinkView;
-                if (file.extension === 'pdf' && self.pdfManager) {
-                    self.pdfManager.unload();
+            return async function (this: BacklinkView, file: TFile) {
+                if (file.extension === 'pdf' && this.pdfManager) {
+                    this.pdfManager.unload();
                 }
                 await old.call(this, file);
             };
@@ -51,17 +50,15 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
 
     plugin.register(around(backlinkRenderer.backlinkDom.constructor.prototype, {
         addResult(old) {
-            return function (file: TFile, result: FileSearchResult, content: string, showTitle: boolean): SearchResultFileDom {
-                const self = this as SearchResultDom;
-
-                if (self.filter) {
+            return function (this: SearchResultDom, file: TFile, result: FileSearchResult, content: string, showTitle: boolean): SearchResultFileDom {
+                if (this.filter) {
                     const cache = app.metadataCache.getFileCache(file);
                     if (cache) {
                         const resultFromContent: SearchMatches = [];
 
                         for (const [start, end] of result.content) {
                             const linkCache = findReferenceCache(cache, start, end);
-                            if (linkCache && self.filter(file, linkCache)) resultFromContent.push([start, end]);
+                            if (linkCache && this.filter(file, linkCache)) resultFromContent.push([start, end]);
                         }
 
                         result.content.length = 0;
@@ -71,7 +68,7 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
 
                         for (const item of result.properties) {
                             const linkCache = cache.frontmatterLinks?.find((link) => link.key === item.key);
-                            if (linkCache && self.filter(file, linkCache)) resultFromProperties.push(item);
+                            if (linkCache && this.filter(file, linkCache)) resultFromProperties.push(item);
                         }
                         result.properties.length = 0;
                         result.properties.push(...resultFromProperties);
@@ -86,7 +83,10 @@ export const patchBacklink = (plugin: PDFPlus): boolean => {
     lib.workspace.iterateBacklinkViews((view) => {
         // reflect the patch to existing backlink views
         if (view.file?.extension === 'pdf') {
-            view.onLoadFile(view.file);
+            view.onLoadFile(view.file).catch((error) => {
+                new Notice(`${plugin.manifest.name}: Failed to reload the backlinks view.`);
+                console.error(error);
+            });
         }
     });
 

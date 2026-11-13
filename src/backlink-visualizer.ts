@@ -1,4 +1,4 @@
-import { HoverParent, HoverPopover, Keymap, TFile, setIcon } from 'obsidian';
+import { HoverParent, HoverPopover, Keymap, Notice, TFile, setIcon } from 'obsidian';
 
 import PDFPlus from 'main';
 import { PDFPlusComponent } from 'lib/component';
@@ -119,7 +119,7 @@ export class BacklinkDomManager extends PDFPlusComponent {
         const pos = 'position' in cache.refCache ? cache.refCache.position : undefined;
         const lineNumber = pos?.start.line;
 
-        const state: any = { isTriggeredFromBacklinkVisualizer: true };
+        const state: { isTriggeredFromBacklinkVisualizer: boolean, scroll?: number } = { isTriggeredFromBacklinkVisualizer: true };
         if (typeof lineNumber === 'number') {
             state.scroll = lineNumber;
         }
@@ -138,7 +138,10 @@ export class BacklinkDomManager extends PDFPlusComponent {
         this.registerDomEventForCache(cache, el, 'dblclick', (event) => {
             if (this.plugin.settings.doubleClickHighlightToOpenBacklink) {
                 const paneType = Keymap.isModEvent(event);
-                this.lib.workspace.openMarkdownLinkFromPDF(cache.sourcePath, this.file.path, paneType, pos ? { pos } : undefined);
+                this.lib.workspace.openMarkdownLinkFromPDF(cache.sourcePath, this.file.path, paneType, pos ? { pos } : undefined).catch((error) => {
+                    new Notice(`${this.plugin.manifest.name}: Failed to open the backlink.`);
+                    console.error(error);
+                });
             }
         });
     }

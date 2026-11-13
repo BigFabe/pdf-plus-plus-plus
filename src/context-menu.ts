@@ -27,11 +27,11 @@ export const onContextMenu = async (plugin: PDFPlus, child: PDFViewerChild, evt:
             await new Promise((resolve) => {
                 // wait up to 1 sec
                 const timer = evt.win.setTimeout(() => resolve(null), 1000);
-                electron!.ipcRenderer.once('context-menu', (n, r) => {
+                electron.ipcRenderer.once('context-menu', (n, r) => {
                     evt.win.clearTimeout(timer);
                     resolve(r);
                 });
-                electron!.ipcRenderer.send('context-menu');
+                electron.ipcRenderer.send('context-menu');
             });
         }
     }
@@ -91,7 +91,10 @@ export const onThumbnailContextMenu = (plugin: PDFPlus, child: PDFViewerChild, e
                 item.setTitle(title)
                     .setIcon('lucide-copy')
                     .onClick(() => {
-                        (evt.view ?? activeWindow).navigator.clipboard.writeText(link);
+                        (evt.view ?? activeWindow).navigator.clipboard.writeText(link).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to copy the page link.`);
+                        });
                         const file = child.file;
                         if (file) plugin.lastCopiedDestInfo = { file, destArray: [pageNumber - 1, 'XYZ', null, null, null] };
                     });
@@ -189,18 +192,22 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
             menuItem
                 .setTitle(title)
                 .setIcon('lucide-copy')
-                .onClick(async () => {
-                    const evaluated = await lib.copyLink.getTextToCopyForOutlineItem(child, file, item);
-                    (evt.view ?? activeWindow).navigator.clipboard.writeText(evaluated);
+                .onClick(() => {
+                    lib.copyLink.getTextToCopyForOutlineItem(child, file, item).then(async (evaluated) => {
+                        await (evt.view ?? activeWindow).navigator.clipboard.writeText(evaluated);
 
-                    const dest = item.item.dest;
-                    if (typeof dest === 'string') {
-                        plugin.lastCopiedDestInfo = { file, destName: dest };
-                    } else {
-                        const pageNumber = await item.getPageNumber();
-                        const destArray = lib.normalizePDFJsDestArray(dest, pageNumber);
-                        plugin.lastCopiedDestInfo = { file, destArray };
-                    }
+                        const dest = item.item.dest;
+                        if (typeof dest === 'string') {
+                            plugin.lastCopiedDestInfo = { file, destName: dest };
+                        } else {
+                            const pageNumber = await item.getPageNumber();
+                            const destArray = lib.normalizePDFJsDestArray(dest, pageNumber);
+                            plugin.lastCopiedDestInfo = { file, destArray };
+                        }
+                    }).catch((error) => {
+                        console.error(error);
+                        new Notice(`${plugin.manifest.name}: Failed to copy the outline link.`);
+                    });
                 });
         });
 
@@ -212,19 +219,22 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                 .onClick(() => {
                     new PDFOutlineTitleModal(plugin, 'Add subitem to outline')
                         .ask()
-                        .then(async ({ title }) => {
+                        .then(({ title }) => {
                             const view = lib.getPDFViewFromChild(child);
                             if (view) {
                                 const state = view.getState();
                                 const destArray = lib.viewStateToDestArray(state, true);
                                 if (destArray) {
-                                    await PDFOutlines.findAndProcessOutlineItem(item, (outlineItem) => {
+                                    PDFOutlines.findAndProcessOutlineItem(item, async (outlineItem) => {
                                         outlineItem
                                             .createChild(title, destArray)
                                             .updateCountForAllAncestors();
-                                        outlineItem
+                                        await outlineItem
                                             .sortChildren();
-                                    }, file, plugin);
+                                    }, file, plugin).catch((error) => {
+                                        console.error(error);
+                                        new Notice(`${plugin.manifest.name}: Failed to add the subitem.`);
+                                    });
                                     return;
                                 }
                             }
@@ -240,10 +250,13 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                         new PDFOutlineTitleModal(plugin, 'Rename outline item')
                             .presetTitle(item.item.title)
                             .ask()
-                            .then(async ({ title }) => {
-                                await PDFOutlines.findAndProcessOutlineItem(item, (outlineItem) => {
+                            .then(({ title }) => {
+                                PDFOutlines.findAndProcessOutlineItem(item, (outlineItem) => {
                                     outlineItem.title = title;
-                                }, file, plugin);
+                                }, file, plugin).catch((error) => {
+                                    console.error(error);
+                                    new Notice(`${plugin.manifest.name}: Failed to rename the outline item.`);
+                                });
                             });
                     });
             })
@@ -251,36 +264,47 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                 menuItem
                     .setTitle('Move item to...')
                     .setIcon('lucide-folder-tree')
-                    .onClick(async () => {
-                        const outlines = await PDFOutlines.fromFile(file, plugin);
-                        const itemToMove = await outlines.findPDFjsOutlineTreeNode(item);
+                    .onClick(() => {
+                        PDFOutlines.fromFile(file, plugin).then(async (outlines) => {
+                            const itemToMove = await outlines.findPDFjsOutlineTreeNode(item);
 
-                        if (!itemToMove) {
-                            new Notice(`${plugin.manifest.name}: Failed to load the PDF document.`);
-                            return;
-                        }
+                            if (!itemToMove) {
+                                new Notice(`${plugin.manifest.name}: Failed to load the PDF document.`);
+                                return;
+                            }
 
-                        new PDFOutlineMoveModal(outlines, itemToMove)
-                            .askDestination()
-                            .then(async (destItem) => {
-                                destItem.appendChild(itemToMove);
-                                destItem.sortChildren();
-                                const buffer = await outlines.doc.save();
-                                await app.vault.modifyBinary(file, buffer);
-                            });
+                            new PDFOutlineMoveModal(outlines, itemToMove)
+                                .askDestination()
+                                .then((destItem) => {
+                                    destItem.appendChild(itemToMove);
+                                    destItem.sortChildren().then(async () => {
+                                        const buffer = await outlines.doc.save();
+                                        await app.vault.modifyBinary(file, buffer);
+                                    }).catch((error) => {
+                                        console.error(error);
+                                        new Notice(`${plugin.manifest.name}: Failed to move the outline item.`);
+                                    });
+                                });
+                        }).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to load the outline.`);
+                        });
                     });
             })
             .addItem((menuItem) => {
                 menuItem
                     .setTitle('Delete')
                     .setIcon('lucide-trash')
-                    .onClick(async () => {
+                    .onClick(() => {
                         // For future reference, child === item.owner.viewer
-                        await PDFOutlines.findAndProcessOutlineItem(item, (outlineItem) => {
+                        PDFOutlines.findAndProcessOutlineItem(item, (outlineItem) => {
                             // Remove the found outline item from the tree
                             outlineItem.remove();
                             outlineItem.updateCountForAllAncestors();
-                        }, file, plugin);
+                        }, file, plugin).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to delete the outline item.`);
+                        });
                     });
 
             })
@@ -288,7 +312,7 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                 menuItem
                     .setTitle('Extract to new file')
                     .setIcon('lucide-file-output')
-                    .onClick(async () => {
+                    .onClick(() => (async () => {
                         const { lib, settings } = plugin;
 
                         const outlines = await PDFOutlines.fromFile(file, plugin);
@@ -349,7 +373,7 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                         )
                             .ask()
                             .then((keepLabels, inPlace) => {
-                                lib.composer.extractPages(file, { from: pageNumber, to: nextPageNumber! - 1 }, dstPath, false, keepLabels, inPlace)
+                                lib.composer.extractPages(file, { from: pageNumber, to: nextPageNumber - 1 }, dstPath, false, keepLabels, inPlace)
                                     .then(async (file) => {
                                         if (!file) {
                                             new Notice(`${plugin.manifest.name}: Failed to extract section from PDF.`);
@@ -360,9 +384,15 @@ export const onOutlineItemContextMenu = (plugin: PDFPlus, child: PDFViewerChild,
                                             await leaf.openFile(file);
                                             await lib.workspace.revealLeaf(leaf);
                                         }
+                                    }).catch((error) => {
+                                        console.error(error);
+                                        new Notice(`${plugin.manifest.name}: Failed to extract the section.`);
                                     });
                             });
-                    });
+                    })().catch((error) => {
+                        console.error(error);
+                        new Notice(`${plugin.manifest.name}: Failed to load the section for extraction.`);
+                    }));
             })
             .addSeparator()
             .addItem((item) => {
@@ -390,17 +420,20 @@ export const onOutlineContextMenu = (plugin: PDFPlus, child: PDFViewerChild, fil
                     .onClick(() => {
                         new PDFOutlineTitleModal(plugin, 'Add item to outline')
                             .ask()
-                            .then(async ({ title }) => {
+                            .then(({ title }) => {
                                 const view = lib.getPDFViewFromChild(child);
                                 if (view) {
                                     const state = view.getState();
                                     const destArray = lib.viewStateToDestArray(state, true);
                                     if (destArray) {
-                                        await PDFOutlines.processOutlineRoot((root) => {
+                                        PDFOutlines.processOutlineRoot(async (root) => {
                                             root.createChild(title, destArray)
                                                 .updateCountForAllAncestors();
-                                            root.sortChildren();
-                                        }, file, plugin);
+                                            await root.sortChildren();
+                                        }, file, plugin).catch((error) => {
+                                            console.error(error);
+                                            new Notice(`${plugin.manifest.name}: Failed to add the outline item.`);
+                                        });
                                         return;
                                     }
                                 }
@@ -610,8 +643,11 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                                 .setIcon('lucide-trash')
                                 .onClick(() => {
                                     if (child.file) {
-                                        new PDFAnnotationDeleteModal(plugin, child.file, pageNumber, id)
-                                            .openIfNeccessary();
+                                        Promise.resolve(new PDFAnnotationDeleteModal(plugin, child.file, pageNumber, id)
+                                            .openIfNeccessary()).catch((error) => {
+                                                console.error(`${plugin.manifest.name}: Failed to delete PDF annotation.`, error);
+                                                new Notice(`${plugin.manifest.name}: Could not delete PDF annotation. See console for details.`);
+                                            });
                                     }
                                 });
                         });
@@ -628,7 +664,7 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                             item.setSection('link')
                                 .setTitle('Copy PDF link')
                                 .setIcon('lucide-copy')
-                                .onClick(async () => {
+                                .onClick(() => (async () => {
                                     const subpath = await lib.destIdToSubpath(destId, doc);
                                     if (typeof subpath === 'string') {
                                         let display = annotatedText;
@@ -637,10 +673,13 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                                         }
                                         const link = lib.generateMarkdownLink(file, '', subpath, display ?? undefined).slice(1);
                                         // How does the electron version differ?
-                                        navigator.clipboard.writeText(link);
+                                        await this.win.navigator.clipboard.writeText(link);
                                         plugin.lastCopiedDestInfo = { file, destName: destId };
                                     }
-                                });
+                                })().catch((error) => {
+                                    console.error(error);
+                                    new Notice(`${plugin.manifest.name}: Failed to copy the PDF link.`);
+                                }));
                         });
 
                         if (plugin.lib.isCitationId(destId)) {
@@ -687,7 +726,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                         .setTitle('Paste copied PDF link to selection')
                         .setIcon('lucide-clipboard-paste')
                         .onClick(() => {
-                            lib.highlight.writeFile.addLinkAnnotationToSelection(destArray);
+                            lib.highlight.writeFile.addLinkAnnotationToSelection(destArray).catch((error) => {
+                                console.error(error);
+                                new Notice(`${plugin.manifest.name}: Failed to add the link annotation.`);
+                            });
                         });
                 });
             } else if ('destName' in plugin.lastCopiedDestInfo) {
@@ -698,7 +740,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                         .setTitle('Paste copied link to selection')
                         .setIcon('lucide-clipboard-paste')
                         .onClick(() => {
-                            lib.highlight.writeFile.addLinkAnnotationToSelection(destName);
+                            lib.highlight.writeFile.addLinkAnnotationToSelection(destName).catch((error) => {
+                                console.error(error);
+                                new Notice(`${plugin.manifest.name}: Failed to add the link annotation.`);
+                            });
                         });
                 });
             }
@@ -713,7 +758,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                     .setIcon('lucide-copy')
                     .onClick(() => {
                         // How does the electron version differ?
-                        navigator.clipboard.writeText(this.plugin.settings.copyAsSingleLine ? selectedText : (selectionObj?.toString() ?? ''));
+                        this.win.navigator.clipboard.writeText(this.plugin.settings.copyAsSingleLine ? selectedText : (selectionObj?.toString() ?? '')).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to copy the selected text.`);
+                        });
                     });
             });
         }
@@ -727,7 +775,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                     .setIcon('lucide-copy')
                     .onClick(() => {
                         // How does the electron version differ?
-                        navigator.clipboard.writeText(annotatedText!);
+                        this.win.navigator.clipboard.writeText(annotatedText!).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to copy the annotated text.`);
+                        });
                     });
             });
         }
@@ -749,7 +800,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                     .setTitle('Read aloud selected text')
                     .setIcon('lucide-speech')
                     .onClick(() => {
-                        lib.speech.speak(selectedText);
+                        lib.speech.speak(selectedText).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to read the selected text aloud.`);
+                        });
                     });
             });
         }
@@ -761,7 +815,10 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                     .setIcon('lucide-copy')
                     .onClick((evt) => {
                         const link = child.getMarkdownLink(`#page=${pageNumber}`, child.getPageLinkAlias(pageNumber));
-                        evt.win.navigator.clipboard.writeText(link);
+                        evt.win.navigator.clipboard.writeText(link).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to copy the page link.`);
+                        });
                         const file = child.file;
                         if (file) plugin.lastCopiedDestInfo = { file, destArray: [pageNumber - 1, 'XYZ', null, null, null] };
                     });
@@ -1042,7 +1099,10 @@ export const onBacklinkVisualizerContextMenu = (evt: MouseEvent, visualizer: PDF
                 .setTitle(`Unset color`)
                 .setIcon('lucide-palette')
                 .onClick(() => {
-                    lib.composer.linkUpdater.updateLinkColor(cache.refCache, cache.sourcePath, null);
+                    lib.composer.linkUpdater.updateLinkColor(cache.refCache, cache.sourcePath, null).catch((error) => {
+                        console.error(error);
+                        new Notice(`${visualizer.plugin.manifest.name}: Failed to unset the link color.`);
+                    });
                 });
         });
     }
@@ -1054,7 +1114,10 @@ export const onBacklinkVisualizerContextMenu = (evt: MouseEvent, visualizer: PDF
                     .setTitle(`Change color to "${colorName}"`)
                     .setIcon('lucide-palette')
                     .onClick(() => {
-                        lib.composer.linkUpdater.updateLinkColor(cache.refCache, cache.sourcePath, { type: 'name', name: colorName });
+                        lib.composer.linkUpdater.updateLinkColor(cache.refCache, cache.sourcePath, { type: 'name', name: colorName }).catch((error) => {
+                            console.error(error);
+                            new Notice(`${visualizer.plugin.manifest.name}: Failed to change the link color.`);
+                        });
                     });
             });
         }
@@ -1095,7 +1158,7 @@ export const onBacklinkVisualizerContextMenu = (evt: MouseEvent, visualizer: PDF
 
     if (cache.page && cache.FitR) {
         const page = child.getPage(cache.page).pdfPage;
-        const { left, bottom, right, top } = cache.FitR!;
+        const { left, bottom, right, top } = cache.FitR;
 
         menu.addItem((item) => {
             item.setSection('image')
@@ -1110,9 +1173,12 @@ export const onBacklinkVisualizerContextMenu = (evt: MouseEvent, visualizer: PDF
                         return new Blob([buffer], { type: 'image/png' });
                     });
 
-                    navigator.clipboard.write([
+                    evt.win.navigator.clipboard.write([
                         new ClipboardItem({ 'image/png': blobPromise })
-                    ]);
+                    ]).catch((error) => {
+                        console.error(error);
+                        new Notice(`${visualizer.plugin.manifest.name}: Failed to copy the image.`);
+                    });
                 });
         });
     }
