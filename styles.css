@@ -403,7 +403,7 @@ body.hide-pdf-toolbar-in-hover-editor .popover.hover-popover.hover-editor .view-
 }
 
 .pdf-plus-backlink-highlight-layer .rect-highlight {
-    background-color: rgb(var(--text-highlight-bg-rgb));
+    background-color: rgb(var(--pdf-plus-default-color-rgb, 255, 208, 0));
     border-radius: var(--radius-m);
     opacity: 0.2;
 }

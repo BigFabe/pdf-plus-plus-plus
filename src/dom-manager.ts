@@ -84,8 +84,8 @@ export class DomManager extends PDFPlusComponent {
 		const defaultColor = this.colors.get(this.settings.defaultColor.toLowerCase());
 		const hoverColor = this.colors.get(this.settings.backlinkHoverColor.toLowerCase());
 		Object.assign(this.cssVariables, {
-			'--pdf-plus-default-color': defaultColor?.color ?? 'rgb(var(--text-highlight-bg-rgb))',
-			'--pdf-plus-default-color-rgb': defaultColor?.rgb ?? 'var(--text-highlight-bg-rgb)',
+			'--pdf-plus-default-color': defaultColor?.color ?? 'rgb(var(--text-highlight-bg-rgb, 255, 208, 0))',
+			'--pdf-plus-default-color-rgb': defaultColor?.rgb ?? 'var(--text-highlight-bg-rgb, 255, 208, 0)',
 			'--pdf-plus-hover-color': hoverColor?.color ?? '#008000',
 			'--pdf-plus-hover-color-rgb': hoverColor?.rgb ?? '0, 128, 0',
 			'--pdf-plus-existing-tab-highlight-opacity': String(this.settings.existingTabHighlightOpacity),
