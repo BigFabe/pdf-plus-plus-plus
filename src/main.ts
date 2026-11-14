@@ -470,7 +470,8 @@ export default class PDFPlus extends Plugin {
 			const adapter = this.app.vault.adapter;
 			const path = `${this.manifest.dir}/data.json`;
 			if (adapter instanceof FileSystemAdapter) {
-				const fs = await import('fs/promises');
+				// eslint-disable-next-line @typescript-eslint/no-require-imports -- Obsidian's plugin sandbox cannot resolve native dynamic imports of Node modules.
+				const fs = require('fs/promises') as typeof import('fs/promises');
 				const target = adapter.getFullPath(path);
 				const temp = `${target}.${crypto.randomUUID()}.tmp`;
 				try {
