@@ -10,39 +10,50 @@ import { IPdfIo, TextMarkupAnnotationSubtype } from '.';
 export class PdfLibIO extends PDFPlusLibSubmodule implements IPdfIo {
 
     async addTextMarkupAnnotation(file: TFile, pageNumber: number, rects: Rect[], subtype: TextMarkupAnnotationSubtype, colorName?: string, contents?: string) {
+        const annotations = await this.addTextMarkupAnnotations(file, [{ page: pageNumber, rects }], subtype, colorName, contents);
+        return annotations[0].annotationID;
+    }
+
+    /** Write all pages together so a viewer reload cannot interrupt a selection. */
+    async addTextMarkupAnnotations(file: TFile, parts: { page: number, rects: Rect[] }[], subtype: TextMarkupAnnotationSubtype, colorName?: string, contents?: string, beforeSave?: (annotations: { page: number, annotationID: string, rects: Rect[] }[]) => void) {
         if (!this.plugin.settings.author) {
             throw new Error(`${this.plugin.manifest.name}: The author name is not set. Please set it in the plugin settings.`);
         }
 
         return await this.process(file, (pdfDoc) => {
-            const page = pdfDoc.getPage(pageNumber - 1);
-            const { r, g, b } = this.plugin.domManager.getRgb(colorName);
-            const borderRadius = getBorderRadius();
-            const geometry = this.lib.highlight.geometry;
+            const annotations = parts.map(({ page: pageNumber, rects }) => {
+                if (!rects.length) throw new Error('Cannot write an empty PDF highlight.');
+                const page = pdfDoc.getPage(pageNumber - 1);
+                const { r, g, b } = this.plugin.domManager.getRgb(colorName);
+                const borderRadius = getBorderRadius();
+                const geometry = this.lib.highlight.geometry;
 
-            // Since pdf-lib does not provide a high-level API to add annotation to a PDF file,
-            // we have to interact with some low-level objects.
-            // Note that pdf-lib has functions like drawRectangle, but it does not produce referenceable annotations.
-            // For the meaning of each entry, refer to the PDF specification:
-            // - 12.5.2 "Annotation Dictionaries", 
-            // - 12.5.6.2 "Markup Annotations" and 
-            // - 12.5.6.10 "Text Markup Annotations".
-            const ref = this.addAnnotation(page, {
-                Subtype: subtype,
-                Rect: geometry.mergeRectangles(...rects),
-                QuadPoints: geometry.rectsToQuadPoints(rects),
-                // For Contents & T, make sure to pass a PDFString, not a raw string!!
-                // https://github.com/Hopding/pdf-lib/issues/555#issuecomment-670243166
-                Contents: PDFHexString.fromText(contents ?? ''),
-                M: PDFString.fromDate(new Date()),
-                T: PDFHexString.fromText(this.plugin.settings.author),
-                CA: subtype === 'Highlight' ? this.plugin.settings.writeHighlightToFileOpacity : 1.0,
-                Border: subtype === 'Highlight' ? [borderRadius, borderRadius, 0] : undefined,
-                C: [r / 255, g / 255, b / 255],
+                // Since pdf-lib does not provide a high-level API to add annotation to a PDF file,
+                // we have to interact with some low-level objects.
+                // Note that pdf-lib has functions like drawRectangle, but it does not produce referenceable annotations.
+                // For the meaning of each entry, refer to the PDF specification:
+                // - 12.5.2 "Annotation Dictionaries",
+                // - 12.5.6.2 "Markup Annotations" and
+                // - 12.5.6.10 "Text Markup Annotations".
+                const ref = this.addAnnotation(page, {
+                    Subtype: subtype,
+                    Rect: geometry.mergeRectangles(...rects),
+                    QuadPoints: geometry.rectsToQuadPoints(rects),
+                    // For Contents & T, make sure to pass a PDFString, not a raw string!!
+                    // https://github.com/Hopding/pdf-lib/issues/555#issuecomment-670243166
+                    Contents: PDFHexString.fromText(contents ?? ''),
+                    M: PDFString.fromDate(new Date()),
+                    T: PDFHexString.fromText(this.plugin.settings.author),
+                    CA: subtype === 'Highlight' ? this.plugin.settings.writeHighlightToFileOpacity : 1.0,
+                    Border: subtype === 'Highlight' ? [borderRadius, borderRadius, 0] : undefined,
+                    C: [r / 255, g / 255, b / 255],
+                });
+
+                const annotationID = formatAnnotationID(ref.objectNumber, ref.generationNumber);
+                return { page: pageNumber, annotationID, rects };
             });
-
-            const annotationID = formatAnnotationID(ref.objectNumber, ref.generationNumber);
-            return annotationID;
+            beforeSave?.(annotations);
+            return annotations;
         });
     }
     

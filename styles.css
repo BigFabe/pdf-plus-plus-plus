@@ -652,6 +652,13 @@ body {
     height: auto;
 }
 
+/* Keep running headers, footers and page numbers out of body-text selection. */
+.pdf-container .pdf-plus-selection-body .textLayer .pdf-plus-selection-margin,
+.pdf-container .pdf-plus-selection-body .textLayer .pdf-plus-selection-margin * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 body .pdf-container .pdf-plus-selecting * {
     cursor: crosshair;
 

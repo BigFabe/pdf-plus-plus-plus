@@ -6,6 +6,7 @@ import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, 
 import PDFPlus from 'main';
 import { ColorPalette, ColorPaletteState } from 'color-palette';
 import { copyLinkLib } from './copy-link';
+import { PDFSelectionLib } from './pdf-selection';
 import { HighlightLib } from './highlights';
 import { WorkspaceLib } from './workspace-lib';
 import { cropCanvas, encodeLinktext, getDirectPDFObj, isVersionNewerThan, parsePDFSubpath, removeExtension, rotateCanvas, toSingleLine, isTargetNode } from 'utils';
@@ -53,6 +54,7 @@ export class PDFPlusLib {
     /** Sub-modules */
     commands: PDFPlusCommands;
     copyLink: copyLinkLib;
+    selection: PDFSelectionLib;
     highlight: HighlightLib;
     workspace: WorkspaceLib;
     composer: PDFComposer;
@@ -76,6 +78,7 @@ export class PDFPlusLib {
 
         this.commands = new PDFPlusCommands(plugin);
         this.copyLink = new copyLinkLib(plugin);
+        this.selection = new PDFSelectionLib(plugin);
         this.highlight = new HighlightLib(plugin);
         this.workspace = new WorkspaceLib(plugin);
         this.composer = new PDFComposer(plugin);

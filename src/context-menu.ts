@@ -513,9 +513,11 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
         const pageAndSelection = lib.copyLink.getPageAndTextRangeFromSelection(selectionObj)
             ?? (pdfViewer ? { page: pdfViewer.currentPageNumber } : null);
         if (!pageAndSelection) return;
-        // selection is undefined when the selection spans multiple pages
         const { page: pageNumber, selection } = pageAndSelection;
-        const selectedText = lib.toSingleLine(selectionObj?.toString() ?? '');
+        const multiPage = lib.selection.capture(selectionObj);
+        const multiParts = multiPage ? await lib.selection.prepare(multiPage) : null;
+        const rawSelectedText = multiParts ? multiParts.map(part => part.text).join('\n') : selectionObj?.toString() ?? '';
+        const selectedText = lib.toSingleLine(rawSelectedText);
 
         const isVisible = (id: string) => {
             return this.settings.contextMenuConfig.find((section) => section.id === id)?.visible;
@@ -540,7 +542,7 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
         if (selectedText) {
             // copy with custom formats //
 
-            if (selectedText && selection && child.palette) {
+            if (selectedText && (selection || multiPage) && child.palette) {
                 if (isVisible('selection')) {
                     PDFPlusProductMenuComponent
                         .create(this, child.palette)
@@ -758,7 +760,7 @@ export class PDFPlusContextMenu extends PDFPlusMenu {
                     .setIcon('lucide-copy')
                     .onClick(() => {
                         // How does the electron version differ?
-                        this.win.navigator.clipboard.writeText(this.plugin.settings.copyAsSingleLine ? selectedText : (selectionObj?.toString() ?? '')).catch((error) => {
+                        this.win.navigator.clipboard.writeText(this.plugin.settings.copyAsSingleLine ? selectedText : rawSelectedText).catch((error) => {
                             console.error(error);
                             new Notice(`${plugin.manifest.name}: Failed to copy the selected text.`);
                         });

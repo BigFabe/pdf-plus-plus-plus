@@ -211,6 +211,20 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                         isModEvent ||= isModifierName(plugin.settings.showContextMenuOnMouseUpIf) && Keymap.isModifier(evt, plugin.settings.showContextMenuOnMouseUpIf);
                     };
 
+                    this.component.registerDomEvent(viewerContainerEl, 'copy', (evt) => {
+                        const snapshot = lib.selection.capture(viewerContainerEl.doc.getSelection());
+                        if (!snapshot) return;
+                        evt.preventDefault();
+                        evt.stopPropagation();
+                        lib.selection.prepare(snapshot).then(async (parts) => {
+                            const text = parts.map(part => part.text).join('\n');
+                            await viewerContainerEl.win.navigator.clipboard.writeText(plugin.settings.copyAsSingleLine ? lib.toSingleLine(text) : text);
+                        }).catch((error) => {
+                            console.error(error);
+                            new Notice(`${plugin.manifest.name}: Failed to copy the multi-page selection.`);
+                        });
+                    }, true);
+
                     this.component.registerDomEvent(viewerContainerEl, 'pointerdown', (evt) => {
                         lib.highlight.viewer.clearRectHighlight(this);
 
@@ -265,9 +279,10 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                             const endPageEl = plugin.lib.getPageElAssociatedWithNode(endContainer);
                             if (!startPageEl || !endPageEl || startPageEl === endPageEl) return;
 
-                            // Now it turned out that the end of the selection should be replaced with
-                            // the end of the last text layer node in the start page.
-                            const lastTextLayerNode = Array.from(startPageEl.querySelectorAll('.textLayerNode')).at(-1);
+                            // A boundary at the start of a page belongs to the previous
+                            // page, not necessarily the selection's first page.
+                            const previousPageEl = this.getPage(Number(endPageEl.dataset.pageNumber) - 1)?.div;
+                            const lastTextLayerNode = previousPageEl && Array.from(previousPageEl.querySelectorAll('.textLayerNode')).at(-1);
                             if (lastTextLayerNode) {
                                 const selection = doc.getSelection();
                                 if (!selection) return;
@@ -284,13 +299,17 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                             fixTextSelection(evt);
                         }
 
+                        const showMenu = plugin.settings.showContextMenuOnMouseUpIf === 'always' || isModEvent;
+                        viewerContainerEl.removeEventListener('pointerup', onPointerUp);
+                        isModEvent = false;
+
                         if (plugin.settings.autoCopy) {
                             lib.commands.copyLink(false, false);
                             return;
                         }
 
                         if (plugin.settings.replaceContextMenu) {
-                            if (plugin.settings.showContextMenuOnMouseUpIf === 'always' || isModEvent) {
+                            if (showMenu) {
                                 if (evt.win.getSelection()?.toString()) {
                                     evt.win.setTimeout(() => {
                                         showContextMenu(plugin, this, evt).catch((error) => {
@@ -302,8 +321,6 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                             }
                         }
 
-                        viewerContainerEl.removeEventListener('pointerup', onPointerUp);
-                        isModEvent = false;
                     };
                 }
 
@@ -451,6 +468,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
 
                 this.bib?.unload();
                 this.bib = this.component.addChild(new BibliographyManager(plugin, this));
+                lib.selection.registerViewer(this, this.component);
 
                 // Register post-processors
 

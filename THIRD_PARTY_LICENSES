@@ -1,6 +1,6 @@
 # Third Party Licenses
 
-## Zotero PDF.js — automatic page-label detection
+## Zotero PDF.js — page labels and content bounds
 
 The page-label detection in src/lib/auto-page-labels.ts is adapted from Zotero's
 PDF.js fork, src/core/module/page-label.js, revision
@@ -10,7 +10,16 @@ https://github.com/zotero/pdf.js/blob/f57fc80d1c07e4cdc50a767ae0b500b5272123b4/s
 Licensed under the Apache License, Version 2.0. The full license text follows
 below. Modifications include an Obsidian text/character adapter, bounded page
 sampling, a corrected longest-sequence comparison, and cached, read-only
-integration. No PDF files are modified.
+integration. Page-label detection does not modify PDF files.
+
+The neighboring-page content-bound detection in src/lib/pdf-selection.ts is
+also adapted from src/core/module/content-rect.js at the same revision:
+https://github.com/zotero/pdf.js/blob/f57fc80d1c07e4cdc50a767ae0b500b5272123b4/src/core/module/content-rect.js
+
+Modifications include an Obsidian text-run adapter, cached neighboring pages,
+conservative filtering of marginal lines and page numbers, and retaining
+explicit selections that start outside the body text. The same Apache-2.0
+license below applies.
 
 ## Mozilla pdf.js
 

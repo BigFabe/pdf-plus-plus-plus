@@ -6,6 +6,7 @@ import { PDFPlusTemplateProcessor } from 'template';
 import { encodeLinktext, getOffsetInTextLayerNode, getTextLayerInfo, getTextLayerNode, paramsToSubpath, parsePDFSubpath, subpathToParams } from 'utils';
 import { Canvas, PDFOutlineTreeNode, PDFViewerChild, Rect } from 'typings';
 import { ColorPalette } from 'color-palette';
+import { MultiPageSelection } from './pdf-selection';
 
 
 export type AutoFocusTarget =
@@ -259,6 +260,11 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
     }
 
     copyLinkToSelection(checking: boolean, templates: { copyFormat: string, displayTextFormat?: string }, colorName?: string, autoPaste?: boolean): boolean {
+        const multiPage = this.lib.selection.capture();
+        if (multiPage) {
+            if (!checking) this.copyMultiPageSelection(multiPage, templates, colorName, autoPaste, false).catch((error) => this.onCopyError(error));
+            return true;
+        }
         const variables = this.getTemplateVariables(colorName ? { color: colorName.toLowerCase() } : {});
 
         if (variables) {
@@ -369,8 +375,93 @@ export class copyLinkLib extends PDFPlusLibSubmodule {
         return true;
     }
 
+    private async copyMultiPageSelection(snapshot: MultiPageSelection, templates: { copyFormat: string, displayTextFormat?: string }, colorName: string | undefined, autoPaste: boolean | undefined, writeFile: boolean) {
+        const { child, file } = snapshot;
+        if (writeFile && !this.lib.isEditable(child)) throw new Error('PDF editing is disabled for this file.');
+        const parts = await this.lib.selection.prepare(snapshot);
+        if (!parts.length) throw new Error('No text selected in the PDF body.');
+        const palette = this.lib.getColorPaletteFromChild(child);
+        const { r, g, b } = this.plugin.domManager.getRgb(colorName);
+        const color = writeFile ? `${r}, ${g}, ${b}` : colorName?.toLowerCase() ?? '';
+        const formatCopies = (copies: { page: number, subpath: string, text: string }[]) => {
+            if (child.file !== file || child.pdfViewer.pdfViewer?.pdfDocument !== snapshot.doc) {
+                throw new Error('The PDF changed while preparing the selection. Select the text again.');
+            }
+            // Embeds need a separate ![[...]] per page. Quotes and callouts
+            // instead evaluate their template once for the continuous text.
+            if (/!\s*{{\s*link\s*}}/.test(templates.copyFormat)) {
+                return copies.map(copy =>
+                    this.getTextToCopy(child, templates.copyFormat, templates.displayTextFormat, file, copy.page, copy.subpath, copy.text, color, undefined, '')
+                ).join('\n\n');
+            }
+            const first = copies[0];
+            const last = copies[copies.length - 1];
+            const firstLabel = child.getPage(first.page).pageLabel ?? String(first.page);
+            const lastLabel = child.getPage(last.page).pageLabel ?? String(last.page);
+            const links = copies.map(copy => this.getLinkTemplateVariables(child, templates.displayTextFormat, file, copy.subpath, copy.page, copy.text, ''));
+            return new PDFPlusTemplateProcessor(this.plugin, {
+                file,
+                page: first.page,
+                pageLabel: first.page === last.page ? firstLabel : `${firstLabel}–${lastLabel}`,
+                pageCount: snapshot.doc.numPages,
+                text: this.lib.toSingleLine(copies.map(copy => copy.text).join('\n')),
+                comment: '',
+                colorName: color,
+                calloutType: this.settings.calloutType,
+                link: links.map(link => link.link).join(' '),
+                linktext: links.map(link => link.linktext).join(' '),
+                display: links.map(link => link.display).join(', '),
+                linkWithDisplay: links.map(link => link.linkWithDisplay).join(', '),
+                linkToPage: [...new Set(links.map(link => link.linkToPage))].join(' '),
+                linkToPageWithDisplay: [...new Set(links.map(link => link.linkToPageWithDisplay))].join(', '),
+            }).evalTemplate(templates.copyFormat);
+        };
+        let evaluated = '';
+        if (writeFile) {
+            palette?.setStatus('Writing highlight annotations into file...', 10000);
+            const pages = [...new Set(parts.map(part => part.page))].map(page => ({
+                page,
+                rects: parts.filter(part => part.page === page).flatMap(part => part.rects),
+                text: parts.filter(part => part.page === page).map(part => part.text).join(' '),
+            }));
+            await this.lib.highlight.writeFile.pdflib.addTextMarkupAnnotations(
+                file, pages, this.settings.selectionBacklinkVisualizeStyle === 'highlight' ? 'Highlight' : 'Underline', colorName, undefined,
+                annotations => {
+                    // Resolve templates while the original viewer and page labels
+                    // still exist, before saving triggers a viewer reload.
+                    evaluated = formatCopies(annotations.map((annotation, index) => ({
+                        page: annotation.page,
+                        subpath: `#page=${annotation.page}&annotation=${annotation.annotationID}`,
+                        text: pages[index].text,
+                    })));
+                }
+            );
+        } else {
+            evaluated = formatCopies(parts.map(part => ({
+                page: part.page,
+                subpath: paramsToSubpath({ page: part.page, selection: [part.range.beginIndex, part.range.beginOffset, part.range.endIndex, part.range.endOffset].join(','), ...(colorName ? { color: colorName.toLowerCase() } : {}) }),
+                text: part.text,
+            })));
+        }
+        await child.containerEl.win.navigator.clipboard.writeText(evaluated);
+        this.onCopyFinish(evaluated);
+        const first = parts[0];
+        const left = Math.min(...first.rects.map(rect => rect[0]));
+        const top = Math.max(...first.rects.map(rect => rect[3]));
+        this.plugin.lastCopiedDestInfo = { file, destArray: [first.page - 1, 'XYZ', left, top, null] };
+        const currentPalette = this.lib.getColorPaletteFromChild(child);
+        currentPalette?.setStatus('Link copied', this.statusDurationMs);
+        await this.autoFocusOrAutoPaste(evaluated, autoPaste, currentPalette ?? undefined);
+    }
+
     // TODO: A better, more concise function name 😅
     writeHighlightAnnotationToSelectionIntoFileAndCopyLink(checking: boolean, templates: { copyFormat: string, displayTextFormat?: string }, colorName?: string, autoPaste?: boolean): boolean {
+        const multiPage = this.lib.selection.capture();
+        if (multiPage) {
+            if (!this.lib.isEditable(multiPage.child)) return false;
+            if (!checking) this.copyMultiPageSelection(multiPage, templates, colorName, autoPaste, true).catch((error) => this.onCopyError(error));
+            return true;
+        }
         // Get and store the selected text before writing file because
         // the file modification will cause the PDF viewer to be reloaded,
         // which will clear the selection.
