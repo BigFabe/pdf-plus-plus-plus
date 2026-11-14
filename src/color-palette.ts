@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, requestUrl, setIcon, setTooltip } from 'obsidian';
+import { Component, Menu, Notice, Platform, requestUrl, setIcon, setTooltip } from 'obsidian';
 
 import PDFPlus from 'main';
 import { KeysOfType, getEventCoords, isHexString, showMenuUnderParentEl, isTargetHTMLElement } from 'utils';
@@ -27,6 +27,7 @@ export class ColorPalette extends PDFPlusComponent {
     statusContainerEl: HTMLElement | null;
     statusEl: HTMLElement | null;
     importButtonEl: HTMLElement | null;
+    private rectangularSelection: Component | null = null;
 
     /** The state of a color palette is specified by a 4-tuple consisting of the following. */
     selectedColorName: string | null;
@@ -471,6 +472,12 @@ export class ColorPalette extends PDFPlusComponent {
     }
 
     startRectangularSelection(autoPaste: boolean) {
+        // A second invocation must stop the existing session and its handlers.
+        if (this.rectangularSelection) {
+            this.removeChild(this.rectangularSelection);
+            return;
+        }
+
         const cropButtonEl = this.cropButtonEl;
         if (!cropButtonEl) return;
 
@@ -478,9 +485,22 @@ export class ColorPalette extends PDFPlusComponent {
         if (!child.pdfViewer.dom?.viewerEl) return;
 
         const viewerEl = child.pdfViewer.dom.viewerEl;
+        const session = this.addChild(new Component());
+        this.rectangularSelection = session;
+        const stop = () => this.removeChild(session);
+        session.register(() => {
+            this.rectangularSelection = null;
+            cropButtonEl.removeClass('is-active');
+            viewerEl.removeClass('pdf-plus-selecting');
+        });
+        cropButtonEl.addClass('is-active');
+        viewerEl.addClass('pdf-plus-selecting');
+        viewerEl.doc.getSelection()?.removeAllRanges();
 
         const selectBox = { left: 0, top: 0, width: 0, height: 0 };
-        const onPointerDown = (evt: PointerEvent | TouchEvent) => {
+        let drag: Component | null = null;
+        const onPointerDown = (evt: PointerEvent) => {
+            if (evt.button !== 0 || drag) return;
             // Determine the target page based on the event target
             if (!(isTargetHTMLElement(evt, evt.target))) return;
 
@@ -496,9 +516,17 @@ export class ColorPalette extends PDFPlusComponent {
             const { x, y } = getEventCoords(evt);
             selectBox.left = x;
             selectBox.top = y;
+            selectBox.width = 0;
+            selectBox.height = 0;
 
             // Display the selection box
             const boxEl = pageEl.createDiv('pdf-plus-select-box');
+            const selection = session.addChild(new Component());
+            drag = selection;
+            selection.register(() => {
+                boxEl.remove();
+                drag = null;
+            });
             const pageRect = pageEl.getBoundingClientRect(); // includes border width & padding
             const style = getComputedStyle(pageEl);
             const borderTop = parseFloat(style.borderTopWidth);
@@ -511,9 +539,10 @@ export class ColorPalette extends PDFPlusComponent {
                 top: (selectBox.top - (pageRect.top + borderTop + paddingTop)) + 'px',
             });
 
-            const onPointerMove = (evt: PointerEvent | TouchEvent) => {
+            const onPointerMove = (moveEvt: PointerEvent) => {
+                if (moveEvt.pointerId !== evt.pointerId) return;
                 // Update the bottom-right corner of the selection box
-                const { x, y } = getEventCoords(evt);
+                const { x, y } = getEventCoords(moveEvt);
                 const newPageRect = pageEl.getBoundingClientRect();
                 // `- (newPageRect.(left|top) - pageRect.(left|top))` is to account for the page's scroll position changing during the drag
                 selectBox.width = x - selectBox.left - (newPageRect.left - pageRect.left);
@@ -525,8 +554,8 @@ export class ColorPalette extends PDFPlusComponent {
                 });
 
                 // Prevent scrolling on mobile: probably this is redundant, but I follow the "if it ain't broke, don't fix it" principle
-                evt.preventDefault();
-                evt.stopImmediatePropagation();
+                moveEvt.preventDefault();
+                moveEvt.stopImmediatePropagation();
             };
 
             const onTouchMove = (evt: TouchEvent) => {
@@ -535,11 +564,9 @@ export class ColorPalette extends PDFPlusComponent {
                 evt.stopImmediatePropagation();
             };
 
-            const onPointerUp = () => {
-                pageEl.removeEventListener('pointermove', onPointerMove);
-                pageEl.removeEventListener('touchmove', onTouchMove);
-                pageEl.removeEventListener('pointerup', onPointerUp);
-                pageEl.removeChild(boxEl);
+            const onPointerUp = (upEvt: PointerEvent) => {
+                if (upEvt.pointerId !== evt.pointerId) return;
+                session.removeChild(selection);
 
                 // Discard empty selections
                 if (selectBox.height <= 0 || selectBox.width <= 0) return;
@@ -556,6 +583,9 @@ export class ColorPalette extends PDFPlusComponent {
                     ...pageView.getPagePoint(right, top)
                 ]) as Rect;
 
+                // Finish the one-shot session before copying, even if copying fails.
+                stop();
+
                 // Copy an embed link to the selection
                 this.lib.copyLink.copyEmbedLinkToRect(
                     false, child, pageView.id, rect,
@@ -564,43 +594,26 @@ export class ColorPalette extends PDFPlusComponent {
                         : undefined,
                     autoPaste
                 );
-                toggle();
             };
 
-            // `pageEl` is not a part of this component, so just `pageEl.addEventListener` & `pageEl.removeEventListener`is not enough.
-            // We have to explicitly remove the event listeners not just when the selection is done, but also
-            // when this component gets unloaded.
-            this.registerDomEvent(pageEl, 'pointermove', onPointerMove);
-            this.registerDomEvent(pageEl, 'touchmove', onTouchMove);
-            this.registerDomEvent(pageEl, 'pointerup', onPointerUp);
+            // Listen on the document so releasing outside the page also ends the drag.
+            selection.registerDomEvent(viewerEl.doc, 'pointermove', onPointerMove);
+            selection.registerDomEvent(viewerEl.doc, 'touchmove', onTouchMove, { passive: false });
+            selection.registerDomEvent(viewerEl.doc, 'pointerup', onPointerUp);
+            selection.registerDomEvent(viewerEl.doc, 'pointercancel', (cancelEvt) => {
+                if (cancelEvt.pointerId === evt.pointerId) stop();
+            });
+            evt.preventDefault();
         };
 
         const onKeyDown = (evt: KeyboardEvent) => {
             if (evt.key === 'Escape') {
-                toggle();
+                stop();
             }
         };
 
-        const toggle = () => {
-            cropButtonEl.toggleClass('is-active', !cropButtonEl.hasClass('is-active'));
-            viewerEl.toggleClass('pdf-plus-selecting', cropButtonEl.hasClass('is-active'));
-            this.register(() => viewerEl.removeClass('pdf-plus-selecting'));
-
-            activeWindow.getSelection()?.empty();
-
-            if (cropButtonEl.hasClass('is-active')) {
-                // `viewerEl` is not a part of this component, so just `viewerEl.addEventListener` & `viewerEl.removeEventListener`is not enough.
-                // We have to explicitly remove the event listeners not just when the selection is done, but also
-                // when this component gets unloaded.
-                this.registerDomEvent(viewerEl, 'pointerdown', onPointerDown);
-                this.registerDomEvent(viewerEl.doc, 'keydown', onKeyDown);
-            } else {
-                viewerEl.removeEventListener('pointerdown', onPointerDown);
-                viewerEl.doc.removeEventListener('keydown', onKeyDown);
-            }
-        };
-
-        toggle();
+        session.registerDomEvent(viewerEl, 'pointerdown', onPointerDown);
+        session.registerDomEvent(viewerEl.doc, 'keydown', onKeyDown);
     }
 
     setStatus(text: string, durationMs: number) {
