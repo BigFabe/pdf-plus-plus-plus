@@ -1,5 +1,6 @@
 import { Component, MarkdownRenderer, Notice, TFile, debounce, setIcon, setTooltip, Keymap, Menu, Platform, requireApiVersion, apiVersion } from 'obsidian';
 import { around } from 'monkey-around';
+import { PDFDocumentProxy } from 'pdfjs-dist';
 
 import PDFPlus from 'main';
 import { PDFAnnotationDeleteModal, PDFAnnotationEditModal } from 'modals';
@@ -14,6 +15,7 @@ import { camelCaseToKebabCase, getCharactersWithBoundingBoxesInPDFCoords, getTex
 import { PDFOutlineViewer, PDFViewerComponent, PDFViewerChild, PDFSearchSettings, Rect, PDFAnnotationHighlight, PDFTextHighlight, PDFRectHighlight, ObsidianViewer, PDFPageView } from 'typings';
 import { SidebarView, SpreadMode } from 'pdfjs-enums';
 import { VimBindings } from 'vim/vim';
+import { detectPageLabels } from 'lib/auto-page-labels';
 
 // Private PDF.js bridge members not yet declared by the shared API typings.
 type PDFJSViewerBridge = typeof window.pdfjsViewer & {
@@ -1162,8 +1164,12 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
     };
 };
 
-/** Monkey-patch ObsidianViewer so that it can open external PDF files. */
+/** Monkey-patch ObsidianViewer for external files and automatic page labels. */
 const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
+    // Weak keys avoid retaining closed PDFs. Only documents opened in the viewer
+    // participate; other PDF.js consumers keep their original behavior.
+    const pageLabels = new WeakMap<PDFDocumentProxy, Promise<string[] | null> | null>();
+    let pageLabelsPatched = false;
     // What this prototype actually is will change depending on the Obsidian version.
     // 
     // In Obsidian v1.7.7 or earlier, `pdfViewer` is an instance of the `ObsidianViewer` (which is a class).
@@ -1199,6 +1205,30 @@ const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
         load(old) {
             return function (this: ObsidianViewer, ...args: Parameters<ObsidianViewer['load']>) {
                 const [doc] = args;
+                if (!pageLabelsPatched) {
+                    plugin.register(around(Object.getPrototypeOf(doc) as PDFDocumentProxy, {
+                        getPageLabels(original) {
+                            return function (this: PDFDocumentProxy) {
+                                if (!pageLabels.has(this)) return original.call(this);
+                                let result = pageLabels.get(this);
+                                if (!result) {
+                                    result = original.call(this).then(async (labels) => {
+                                        try {
+                                            return await detectPageLabels(this, labels);
+                                        } catch (error) {
+                                            console.warn(`${plugin.manifest.name}: Automatic page-label detection failed; using PDF labels.`, error);
+                                            return labels;
+                                        }
+                                    });
+                                    pageLabels.set(this, result);
+                                }
+                                return result;
+                            };
+                        }
+                    }));
+                    pageLabelsPatched = true;
+                }
+                if (!pageLabels.has(doc)) pageLabels.set(doc, null);
                 const callbacks = this.pdfPlusCallbacksOnDocumentLoaded;
                 if (callbacks) {
                     for (const callback of callbacks) {
