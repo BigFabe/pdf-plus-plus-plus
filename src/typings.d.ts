@@ -237,6 +237,9 @@ interface ObsidianViewer {
     findController: PDFFindController;
     pdfLinkService: PDFLinkService;
     pdfLoadingTask: { promise: Promise<PDFDocumentProxy> };
+    pageBackground: string | null;
+    pageInvert: boolean;
+    setBackground(background: string | null, invert: boolean): void;
     setHeight(height?: number | 'page' | 'auto'): void;
     applySubpath(subpath: string): void;
     // The function signature before Obsidian v1.8.0:

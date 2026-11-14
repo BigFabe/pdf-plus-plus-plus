@@ -371,6 +371,45 @@ body.hide-pdf-toolbar-in-hover-editor .popover.hover-popover.hover-editor .view-
     padding-top: 0;
 }
 
+.pdf-plus-settings .pdf-plus-template-setting {
+    display: block;
+
+    .setting-item-info {
+        display: none;
+    }
+
+    .setting-item-control {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--size-4-2);
+        width: 100%;
+        min-width: 0;
+        padding: 0;
+        margin: 0;
+    }
+
+    input[type="text"], textarea {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    textarea, input:nth-of-type(2) {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
+    textarea {
+        resize: vertical;
+    }
+
+    .clickable-icon {
+        grid-column: 2;
+        grid-row: 1;
+    }
+}
+
 .annotationLayer .popupContent {
     &>p:first-child {
         margin-top: 0;

@@ -88,6 +88,7 @@ const MOBILE_COPY_ACTIONS = {
 } as const;
 
 export interface PDFPlusSettings {
+	pdfColorScheme: 'light' | 'dark' | 'system';
 	displayTextFormats: NamedTemplate[];
 	defaultDisplayTextFormatIndex: number,
 	syncDisplayTextFormat: boolean;
@@ -313,6 +314,7 @@ export interface PDFPlusSettings {
 }
 
 export const DEFAULT_SETTINGS: PDFPlusSettings = {
+	pdfColorScheme: 'system',
 	displayTextFormats: [
 		// {
 		// 	name: 'Obsidian default',
@@ -1276,19 +1278,18 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}) {
 		const { getName, setName, getValue, setValue } = accesors;
 		const item = items[index];
-		const name = getName(item);
-		const value = getValue(item);
 
 		return this.addSetting()
+			.setClass('pdf-plus-template-setting')
 			.addText((text) => {
 				text.setPlaceholder(configs.name.placeholder)
 					.then((text) => {
 						text.inputEl.size = configs.name.formSize;
 						setTooltip(text.inputEl, configs.name.placeholder);
 					})
-					.setValue(name)
+					.setValue(getName(item))
 					.onChange(this.handleAsync(async (newName) => {
-						if (items.some((item) => getName(item) === newName)) {
+						if (items.some((other) => other !== item && getName(other) === newName)) {
 							new Notice(configs.name.duplicateMessage);
 							text.inputEl.addClass('error');
 							return;
@@ -1317,7 +1318,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								textarea.inputEl.cols = configs.value.formSize;
 								setTooltip(textarea.inputEl, configs.value.placeholder);
 							})
-							.setValue(value)
+							.setValue(getValue(item))
 							.onChange(this.handleAsync(async (newValue) => {
 								setValue(item, newValue);
 								await this.plugin.saveSettings();
@@ -1330,7 +1331,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 								text.inputEl.size = configs.value.formSize;
 								setTooltip(text.inputEl, configs.value.placeholder);
 							})
-							.setValue(value)
+							.setValue(getValue(item))
 							.onChange(this.handleAsync(async (newValue) => {
 								setValue(item, newValue);
 								await this.plugin.saveSettings();
@@ -1954,6 +1955,12 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 
 		this.addHeading('Viewer options', 'viewer-option', 'lucide-monitor');
+		this.addDropdownSetting('pdfColorScheme', { light: 'Light', dark: 'Dark', system: 'System' }, () => {
+			this.plugin.loadStyle();
+			this.plugin.trigger('adapt-to-theme-change', { adapt: this.plugin.settings.pdfColorScheme !== 'light' });
+		})
+			.setName('PDF color scheme')
+			.setDesc('Light keeps the original PDF colors. Dark inverts them. System follows your operating system’s appearance. Applies immediately and overrides the toolbar’s "Adapt to theme" option; PDF files are not modified.');
 		this.addSetting('defaultZoomValue')
 			.setName('Default zoom level')
 			.setDesc('This option will be ignored in PDF embeds.')

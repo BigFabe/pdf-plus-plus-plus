@@ -108,7 +108,6 @@ export default class PDFPlus extends Plugin {
 		await loadPdfJs();
 
 		await this.loadSettings();
-		await this.saveSettings();
 
 		this.domManager = this.addChild(new DomManager(this));
 		this.domManager.registerCalloutRenderer();
@@ -201,9 +200,22 @@ export default class PDFPlus extends Plugin {
 	}
 
 	async loadSettings() {
-		const stored: unknown = await this.loadData();
-		const saved = typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? stored : {};
-		this.settings = Object.assign(this.getDefaultSettings(), saved);
+		const adapter = this.app.vault.adapter;
+		const path = `${this.manifest.dir}/data.json`;
+		let stored: unknown = {};
+		if (await adapter.exists(path)) {
+			// Read directly: loadData() hides read/parse errors, which can cause silent resets.
+			const json = await adapter.read(path);
+			if (json.trim()) {
+				stored = JSON.parse(json);
+			} else {
+				new Notice('PDF++: The settings file is empty. Using defaults; they will only be saved when you change a setting.', 0);
+			}
+		}
+		if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
+			throw new Error('PDF++: Invalid saved settings. Refusing to overwrite them with defaults.');
+		}
+		this.settings = Object.assign(this.getDefaultSettings(), stored);
 		// Older releases enabled background requests by default, without explicit consent.
 		if (!this.settings.updateCheckConsent) this.settings.autoCheckForUpdates = false;
 
@@ -438,13 +450,47 @@ export default class PDFPlus extends Plugin {
 		});
 	}
 
+	private settingsSaveQueue: Promise<void> = Promise.resolve();
+
 	async saveSettings() {
 		const { anystylePath, ...settings } = this.settings;
 
 		// AnyStyle path: save to local storage, not to data.json
 		this.saveLocalStorage('anystylePath', anystylePath);
-
 		await this.saveData(settings);
+	}
+
+	async saveData(data: unknown): Promise<void> {
+		if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+			throw new Error('PDF++: Refusing to save invalid settings.');
+		}
+		// Serialize now so later edits cannot change an already queued write.
+		const json = JSON.stringify(data, null, 2);
+		const save = this.settingsSaveQueue.then(async () => {
+			const adapter = this.app.vault.adapter;
+			const path = `${this.manifest.dir}/data.json`;
+			if (adapter instanceof FileSystemAdapter) {
+				const fs = await import('fs/promises');
+				const target = adapter.getFullPath(path);
+				const temp = `${target}.${crypto.randomUUID()}.tmp`;
+				try {
+					await fs.writeFile(temp, json, { encoding: 'utf8', flush: true });
+					await fs.rename(temp, target);
+				} catch (error) {
+					await fs.unlink(temp).catch(() => {});
+					throw error;
+				}
+			} else {
+				// Unlike Vault.writeJson(), the adapter propagates write errors.
+				await adapter.write(path, json);
+			}
+		});
+		// A failed write must not block later saves; the caller still receives the error.
+		this.settingsSaveQueue = save.catch((error) => {
+			console.error('PDF++: Failed to save settings', error);
+			new Notice('PDF++: Settings could not be saved. See the developer console for details.', 0);
+		});
+		await save;
 	}
 
 	loadLocalStorage(key: string) {

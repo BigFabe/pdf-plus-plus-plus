@@ -174,6 +174,19 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
     const prototype = child.constructor.prototype as PatchedPDFViewerChild;
     const pdfjsViewer = window.pdfjsViewer as PDFJSViewerBridge;
     plugin.register(around(prototype, {
+        onCSSChange() {
+            return function (this: PDFViewerChild) {
+                const viewer = this.pdfViewer;
+                const container = viewer?.dom?.pdfContainerEl;
+                if (!container || !viewer.pdfViewer) return;
+                const dark = lib.isPDFDark(container.ownerDocument);
+                const background = dark ? '#202020' : null;
+                container.toggleClass('mod-themed', dark);
+                if (viewer.pageBackground !== background || viewer.pageInvert !== dark) {
+                    viewer.setBackground(background, dark);
+                }
+            };
+        },
         load(old) {
             return async function (this: PDFViewerChild, ...args: Parameters<PDFViewerChild['load']>) {
                 this.hoverPopover = null;
@@ -189,6 +202,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                 this.component.load();
 
                 const ret = await old.call(this, ...args);
+                this.onCSSChange();
 
                 const viewerContainerEl = this.pdfViewer?.dom?.viewerContainerEl;
                 if (viewerContainerEl) {

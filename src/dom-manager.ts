@@ -44,6 +44,13 @@ export class DomManager extends PDFPlusComponent {
 
 	private registerDocument(doc: Document) {
 		if (this.documentCleanups.has(doc)) return;
+		const systemTheme = doc.defaultView?.matchMedia('(prefers-color-scheme: dark)');
+		const onSystemThemeChange = () => {
+			if (this.settings.pdfColorScheme !== 'system') return;
+			this.app.workspace.trigger('css-change');
+			this.plugin.trigger('adapt-to-theme-change', { adapt: !!systemTheme?.matches });
+		};
+		systemTheme?.addEventListener('change', onSystemThemeChange);
 		const previous = new Map<string, { value: string, priority: string }>();
 		for (const [name, value] of Object.entries(this.cssVariables)) {
 			previous.set(name, { value: doc.body.style.getPropertyValue(name), priority: doc.body.style.getPropertyPriority(name) });
@@ -59,6 +66,7 @@ export class DomManager extends PDFPlusComponent {
 		for (const el of doc.querySelectorAll<HTMLElement>('.callout')) this.applyCalloutStyle(el);
 
 		this.documentCleanups.set(doc, () => {
+			systemTheme?.removeEventListener('change', onSystemThemeChange);
 			for (const [name, { value, priority }] of previous) {
 				if (value) doc.body.style.setProperty(name, value, priority);
 				else doc.body.style.removeProperty(name);

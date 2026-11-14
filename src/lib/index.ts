@@ -1024,12 +1024,14 @@ export class PDFPlusLib {
         return base64ToArrayBuffer(base64);
     }
 
+    isPDFDark(doc: Document = activeDocument): boolean {
+        const scheme = this.plugin.settings.pdfColorScheme;
+        return scheme === 'dark' || (scheme === 'system' && !!doc.defaultView?.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+
     getOptionalRenderParameters(doc: Document = activeDocument): OptionalRenderParameters {
-        return this.plugin.settings.rectFollowAdaptToTheme && this.app.loadLocalStorage('pdfjs-is-themed')
-            ? {
-                background: doc.body.getCssPropertyValue('--pdf-page-background'),
-                invert: doc.body.hasClass('theme-dark'),
-            } : {};
+        return this.plugin.settings.rectFollowAdaptToTheme && this.isPDFDark(doc)
+            ? { background: '#202020', invert: true } : {};
     }
 
     getSelectedText(textContentItems: TextContentItem[], beginIndex: number, beginOffset: number, endIndex: number, endOffset: number) {
