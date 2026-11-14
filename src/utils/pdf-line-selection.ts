@@ -17,6 +17,9 @@ export function registerPDFLineSelection(component: Component, viewerEl: HTMLEle
     const linesByPage = new Map<HTMLElement, TextLine[]>();
     let anchor: TextLine | null = null;
     let pointerId: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
 
     const getLine = (pageEl: HTMLElement, clientX: number, clientY: number) => {
         const pageRect = pageEl.getBoundingClientRect();
@@ -93,6 +96,7 @@ export function registerPDFLineSelection(component: Component, viewerEl: HTMLEle
     const stop = () => {
         anchor = null;
         pointerId = null;
+        dragging = false;
         linesByPage.clear();
     };
     component.register(stop);
@@ -112,11 +116,12 @@ export function registerPDFLineSelection(component: Component, viewerEl: HTMLEle
         const x = evt.clientX - pageEl.getBoundingClientRect().left;
         if (x >= line.left && x <= line.right) return;
 
-        // Suppress native character selection only for a drag starting beside a line.
-        evt.preventDefault();
+        // Leave clicks native so they dismiss menus and clear the old selection.
+        // Whole-line selection starts only after the pointer actually moves.
         anchor = line;
         pointerId = evt.pointerId;
-        selectThrough(line);
+        startX = evt.clientX;
+        startY = evt.clientY;
     }, { capture: true });
 
     component.registerDomEvent(doc, 'pointermove', (evt) => {
@@ -125,13 +130,18 @@ export function registerPDFLineSelection(component: Component, viewerEl: HTMLEle
             stop();
             return;
         }
+        if (!dragging) {
+            if (Math.hypot(evt.clientX - startX, evt.clientY - startY) < 5) return;
+            dragging = true;
+        }
         evt.preventDefault();
         update(evt);
     }, { capture: true });
 
     component.registerDomEvent(doc, 'pointerup', (evt) => {
         if (evt.pointerId !== pointerId) return;
-        update(evt);
+        if (dragging) update(evt);
+        else doc.getSelection()?.removeAllRanges();
         stop();
     }, { capture: true });
     component.registerDomEvent(doc, 'pointercancel', stop);

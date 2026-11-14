@@ -206,7 +206,26 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
 
                 const viewerContainerEl = this.pdfViewer?.dom?.viewerContainerEl;
                 if (viewerContainerEl) {
+                    const doc = viewerContainerEl.doc;
                     let isModEvent = false;
+                    let selectionBeforePointerDown: Range | null = null;
+                    let popupTimer: number | null = null;
+                    let popupGeneration = 0;
+                    const cancelPopup = () => {
+                        if (popupTimer !== null) viewerContainerEl.win.clearTimeout(popupTimer);
+                        popupTimer = null;
+                        popupGeneration++;
+                        selectionBeforePointerDown = null;
+                    };
+                    const currentTextRange = () => {
+                        const selection = doc.getSelection();
+                        return selection && !selection.isCollapsed && selection.rangeCount && selection.toString().trim()
+                            ? selection.getRangeAt(0) : null;
+                    };
+                    const sameRange = (a: Range, b: Range) => a.startContainer === b.startContainer
+                        && a.startOffset === b.startOffset && a.endContainer === b.endContainer && a.endOffset === b.endOffset;
+                    this.component.registerDomEvent(doc, 'pointerdown', cancelPopup, true);
+                    this.component.register(cancelPopup);
                     const updateIsModEvent = (evt: MouseEvent) => {
                         isModEvent ||= isModifierName(plugin.settings.showContextMenuOnMouseUpIf) && Keymap.isModifier(evt, plugin.settings.showContextMenuOnMouseUpIf);
                     };
@@ -227,6 +246,7 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
 
                     this.component.registerDomEvent(viewerContainerEl, 'pointerdown', (evt) => {
                         lib.highlight.viewer.clearRectHighlight(this);
+                        selectionBeforePointerDown = currentTextRange()?.cloneRange() ?? null;
 
                         updateIsModEvent(evt);
                         // Before Obsidian v1.8.0, I was listening to mouseup event.
@@ -236,7 +256,6 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                         this.component?.registerDomEvent(viewerContainerEl, 'pointerup', onPointerUp);
                     });
 
-                    const doc = viewerContainerEl.doc;
                     const fixTextSelection = (evt: PointerEvent) => {
                         const selection = doc.getSelection();
                         if (!selection || selection.rangeCount === 0) return;
@@ -293,6 +312,8 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                     };
 
                     const onPointerUp = (evt: PointerEvent) => {
+                        const previousSelection = selectionBeforePointerDown;
+                        selectionBeforePointerDown = null;
                         updateIsModEvent(evt);
 
                         if (plugin.obsidianHasTextSelectionBug && plugin.settings.fixObsidianTextSelectionBug) {
@@ -308,17 +329,23 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                             return;
                         }
 
-                        if (plugin.settings.replaceContextMenu) {
-                            if (showMenu) {
-                                if (evt.win.getSelection()?.toString()) {
-                                    evt.win.setTimeout(() => {
-                                        showContextMenu(plugin, this, evt).catch((error) => {
-                                            new Notice(`${plugin.manifest.name}: Failed to show the PDF context menu.`);
-                                            console.error(error);
-                                        });
-                                    }, 80);
-                                }
-                            }
+                        if (plugin.settings.replaceContextMenu && showMenu) {
+                            const range = currentTextRange();
+                            if (!range || (previousSelection && sameRange(range, previousSelection))) return;
+                            const expectedRange = range.cloneRange();
+                            const generation = popupGeneration;
+                            const selectionIsCurrent = () => {
+                                const current = currentTextRange();
+                                return generation === popupGeneration && !!current && sameRange(current, expectedRange);
+                            };
+                            popupTimer = viewerContainerEl.win.setTimeout(() => {
+                                popupTimer = null;
+                                if (!selectionIsCurrent()) return;
+                                showContextMenu(plugin, this, evt, selectionIsCurrent).catch((error) => {
+                                    new Notice(`${plugin.manifest.name}: Failed to show the PDF context menu.`);
+                                    console.error(error);
+                                });
+                            }, 80);
                         }
 
                     };

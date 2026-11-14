@@ -41,8 +41,12 @@ export const onContextMenu = async (plugin: PDFPlus, child: PDFViewerChild, evt:
     }
 };
 
-export async function showContextMenu(plugin: PDFPlus, child: PDFViewerChild, evt: MouseEvent) {
+export async function showContextMenu(plugin: PDFPlus, child: PDFViewerChild, evt: MouseEvent, selectionIsCurrent?: () => boolean) {
+    if (selectionIsCurrent && !selectionIsCurrent()) return;
     const menu = await PDFPlusContextMenu.fromMouseEvent(plugin, child, evt);
+    // Automatic selection menus are built asynchronously. A click can clear or
+    // change the selection while their items are still being prepared.
+    if (selectionIsCurrent && !selectionIsCurrent()) return;
 
     child.clearEphemeralUI();
     menu.showAtMouseEvent(evt);
