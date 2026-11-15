@@ -439,6 +439,8 @@ body.hide-pdf-toolbar-in-hover-editor .popover.hover-popover.hover-editor .view-
 .pdf-plus-backlink-highlight-layer .pdf-plus-backlink.pdf-plus-backlink-selection {
     box-sizing: content-box;
     cursor: text;
+    /* Backlink interactions are handled on the page so native text selection can start here. */
+    pointer-events: none;
 }
 
 .pdf-plus-backlink-highlight-layer .rect-highlight {

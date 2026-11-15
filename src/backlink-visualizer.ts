@@ -1,11 +1,11 @@
-import { HoverParent, HoverPopover, Keymap, Notice, TFile, setIcon } from 'obsidian';
+import { Component, HoverParent, HoverPopover, Keymap, Notice, TFile, setIcon } from 'obsidian';
 
 import PDFPlus from 'main';
 import { PDFPlusComponent } from 'lib/component';
 import { readAnnotationData } from 'lib/annotation-data';
 import { PDFBacklinkCache, PDFBacklinkIndex, PDFPageBacklinkIndex } from 'lib/pdf-backlink-index';
 import { PDFPageView, PDFViewerChild, Rect } from 'typings';
-import { MultiValuedMap, getTextLayerInfo, isCanvas, isEmbed, isHoverPopover, isMouseEventExternal, isNonEmbedLike } from 'utils';
+import { MultiValuedMap, getTextLayerInfo, isCanvas, isEmbed, isHoverPopover, isMouseEventExternal, isNonEmbedLike, isTargetHTMLElement } from 'utils';
 import { onBacklinkVisualizerContextMenu } from 'context-menu';
 import { BidirectionalMultiValuedMap } from 'utils';
 import { MergedRect } from 'lib/highlights/geometry';
@@ -39,6 +39,7 @@ export class BacklinkDomManager extends PDFPlusComponent {
     private pagewiseCacheToDomsMap = new Map<number, BidirectionalMultiValuedMap<PDFBacklinkCache, HTMLElement>>;
     private pagewiseStatus = new Map<number, { onPageReady: boolean, onTextLayerReady: boolean, onAnnotationLayerReady: boolean }>;
     private pagewiseOnClearDomCallbacksMap = new MultiValuedMap<number, () => void>();
+    private pagewiseSelectionEvents = new Map<number, Component>();
 
     constructor(visualizer: PDFViewerBacklinkVisualizer) {
         super(visualizer.plugin);
@@ -60,6 +61,9 @@ export class BacklinkDomManager extends PDFPlusComponent {
     }
 
     clearDomInPage(pageNumber: number) {
+        const selectionEvents = this.pagewiseSelectionEvents.get(pageNumber);
+        if (selectionEvents) this.removeChild(selectionEvents);
+        this.pagewiseSelectionEvents.delete(pageNumber);
         const cacheToDoms = this.getCacheToDomsMap(pageNumber);
         for (const el of cacheToDoms.values()) {
             // Avoid removing elements in the annotation layer
@@ -113,6 +117,72 @@ export class BacklinkDomManager extends PDFPlusComponent {
                 this.hookClassAdderOnMouseOver(el, cache);
                 this.setHighlightColor(el, color);
             }
+        }
+        this.hookSelectionEvents(pageNumber);
+    }
+
+    /** Keep text highlights transparent to native selection, while retaining backlink interactions. */
+    private hookSelectionEvents(pageNumber: number) {
+        if (this.pagewiseSelectionEvents.has(pageNumber)) return;
+        const pageEl = this.visualizer.child.getPage(pageNumber).div;
+        const highlights = Array.from(pageEl.querySelectorAll<HTMLElement>('.pdf-plus-backlink-selection')).reverse();
+        if (!highlights.length) return;
+
+        const component = this.addChild(new Component());
+        this.pagewiseSelectionEvents.set(pageNumber, component);
+        let hovered: HTMLElement | undefined;
+        let pointerStart: { x: number, y: number } | undefined;
+        let dragged = false;
+
+        const findHighlight = (event: MouseEvent) => {
+            if (!isTargetHTMLElement(event, event.target)) return;
+            // Icons and PDF annotations already have their own native handlers.
+            if (event.target !== pageEl && !event.target.closest('.textLayer')) return;
+            return highlights.find((el) => {
+                const rect = el.getBoundingClientRect();
+                return event.clientX >= rect.left && event.clientX <= rect.right
+                    && event.clientY >= rect.top && event.clientY <= rect.bottom;
+            });
+        };
+        const forward = (el: HTMLElement, type: string, event: MouseEvent) => {
+            const forwarded = new MouseEvent(type, {
+                view: event.view,
+                cancelable: true,
+                clientX: event.clientX, clientY: event.clientY,
+                screenX: event.screenX, screenY: event.screenY,
+                button: event.button, buttons: event.buttons, detail: event.detail,
+                ctrlKey: event.ctrlKey, metaKey: event.metaKey,
+                altKey: event.altKey, shiftKey: event.shiftKey,
+                relatedTarget: event.relatedTarget,
+            });
+            if (!el.dispatchEvent(forwarded)) event.preventDefault();
+        };
+        const updateHover = (event: MouseEvent, next = findHighlight(event)) => {
+            if (next === hovered) return;
+            if (hovered) forward(hovered, 'mouseout', event);
+            hovered = next;
+            if (hovered) forward(hovered, 'mouseover', event);
+        };
+        component.registerDomEvent(pageEl, 'mouseover', (event) => updateHover(event));
+        component.registerDomEvent(pageEl, 'mousemove', (event) => updateHover(event));
+        component.registerDomEvent(pageEl, 'mouseleave', (event) => {
+            if (hovered) forward(hovered, 'mouseout', event);
+            hovered = undefined;
+        });
+        component.registerDomEvent(pageEl, 'pointerdown', (event) => {
+            pointerStart = { x: event.clientX, y: event.clientY };
+            dragged = false;
+        });
+        component.registerDomEvent(pageEl.ownerDocument, 'pointermove', (event) => {
+            if (pointerStart && event.buttons & 1
+                && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) >= 5) dragged = true;
+        });
+        for (const type of ['dblclick', 'contextmenu'] as const) {
+            component.registerDomEvent(pageEl, type, (event) => {
+                if (type === 'dblclick' && dragged) return;
+                const el = findHighlight(event);
+                if (el) forward(el, type, event);
+            });
         }
     }
 
