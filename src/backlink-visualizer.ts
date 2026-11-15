@@ -131,7 +131,7 @@ export class BacklinkDomManager extends PDFPlusComponent {
         const component = this.addChild(new Component());
         this.pagewiseSelectionEvents.set(pageNumber, component);
         let hovered: HTMLElement | undefined;
-        let pointerStart: { x: number, y: number } | undefined;
+        let pointerStart: { x: number, y: number, highlight?: HTMLElement } | undefined;
         let dragged = false;
 
         const findHighlight = (event: MouseEvent) => {
@@ -170,17 +170,27 @@ export class BacklinkDomManager extends PDFPlusComponent {
             hovered = undefined;
         });
         component.registerDomEvent(pageEl, 'pointerdown', (event) => {
-            pointerStart = { x: event.clientX, y: event.clientY };
+            pointerStart = event.button === 0
+                ? { x: event.clientX, y: event.clientY, highlight: findHighlight(event) } : undefined;
             dragged = false;
         });
         component.registerDomEvent(pageEl.ownerDocument, 'pointermove', (event) => {
             if (pointerStart && event.buttons & 1
                 && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) >= 5) dragged = true;
         });
-        for (const type of ['dblclick', 'contextmenu'] as const) {
+        component.registerDomEvent(pageEl.ownerDocument, 'pointercancel', () => {
+            pointerStart = undefined;
+        });
+        for (const type of ['click', 'contextmenu'] as const) {
             component.registerDomEvent(pageEl, type, (event) => {
-                if (type === 'dblclick' && dragged) return;
                 const el = findHighlight(event);
+                if (type === 'click') {
+                    const start = pointerStart;
+                    pointerStart = undefined;
+                    // A click must begin and end on the same highlight without selecting text.
+                    if (!start || dragged || start.highlight !== el
+                        || Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 5) return;
+                }
                 if (el) forward(el, type, event);
             });
         }
@@ -206,8 +216,11 @@ export class BacklinkDomManager extends PDFPlusComponent {
             });
         });
 
-        this.registerDomEventForCache(cache, el, 'dblclick', (event) => {
-            if (this.plugin.settings.doubleClickHighlightToOpenBacklink) {
+        this.registerDomEventForCache(cache, el, 'click', (event) => {
+            if (this.plugin.settings.doubleClickHighlightToOpenBacklink
+                && event.button === 0 && event.detail <= 1 && !event.shiftKey
+                && !el.ownerDocument.getSelection()?.toString()) {
+                event.preventDefault();
                 const paneType = Keymap.isModEvent(event);
                 this.lib.workspace.openMarkdownLinkFromPDF(cache.sourcePath, this.file.path, paneType, pos ? { pos } : undefined).catch((error) => {
                     new Notice(`${this.plugin.manifest.name}: Failed to open the backlink.`);

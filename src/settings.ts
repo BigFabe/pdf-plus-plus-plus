@@ -1726,13 +1726,14 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 			.setDesc(`Easily open backlinks or display a popover preview of it by pressing ${getModifierNameInPlatform('Mod').toLowerCase()} (by default) while hovering over a highlighted text in PDF viewer.`);
 		this.addRequireModKeyOnHoverSetting('pdf-plus');
 		this.addToggleSetting('doubleClickHighlightToOpenBacklink')
-			.setName('Double click highlighted text to open the corresponding backlink');
+			.setName('Click highlighted text to open the corresponding backlink')
+			.setDesc('Click to open the linked note. Drag to select text without opening the link.');
 
 		this.addHeading('How backlinks are opened', 'open-backlink')
 			.setDesc(
 				'Customize how backlinks are opened when '
 				+ (this.plugin.settings.hoverHighlightAction === 'open' ? `${getModifierNameInPlatform('Mod').toLowerCase()}+hovering over or ` : '')
-				+ 'double-clicking highlighted text.'
+				+ 'clicking highlighted text.'
 			);
 		this.addDropdownSetting('paneTypeForFirstMDLeaf', PANE_TYPE, () => this.redisplay())
 			.setName(`How to open the markdown file when no markdown file is opened`);
