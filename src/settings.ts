@@ -1,6 +1,7 @@
 import { Component, DropdownComponent, Events, HexString, IconName, MarkdownRenderer, Modifier, Notice, ObsidianProtocolData, Platform, PluginSettingTab, Setting, SettingDefinitionItem, TextAreaComponent, TextComponent, debounce, setIcon, setTooltip } from 'obsidian';
 
 import PDFPlus from 'main';
+import { PDF_THEMES, PDFTheme, PDFReadingTheme } from 'pdf-themes';
 import { ExtendedPaneType } from 'lib/workspace-lib';
 import { AutoFocusTarget } from 'lib/copy-link';
 import { CommandSuggest, FuzzyFileSuggest, FuzzyFolderSuggest, FuzzyMarkdownFileSuggest, KeysOfType, getModifierDictInPlatform, getModifierNameInPlatform, isHexString } from 'utils';
@@ -89,6 +90,8 @@ const MOBILE_COPY_ACTIONS = {
 
 export interface PDFPlusSettings {
 	pdfColorScheme: 'light' | 'dark' | 'system';
+	pdfLightTheme: PDFTheme;
+	pdfDarkTheme: PDFTheme;
 	displayTextFormats: NamedTemplate[];
 	defaultDisplayTextFormatIndex: number,
 	syncDisplayTextFormat: boolean;
@@ -315,6 +318,8 @@ export interface PDFPlusSettings {
 
 export const DEFAULT_SETTINGS: PDFPlusSettings = {
 	pdfColorScheme: 'system',
+	pdfLightTheme: 'classic',
+	pdfDarkTheme: 'classic',
 	displayTextFormats: [
 		// {
 		// 	name: 'Obsidian default',
@@ -733,7 +738,7 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 					setTooltip(headerEl, heading);
 
 					this.component.registerDomEvent(headerEl, 'click', (evt) => {
-						(setting.settingEl.previousElementSibling ?? setting.settingEl).scrollIntoView({ behavior: 'smooth' });
+						this.scrollToSetting(setting, { behavior: 'smooth' });
 						this.updateHeaderElClassOnScroll(evt);
 					});
 
@@ -747,14 +752,16 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 	}
 
 	updateHeaderElClass() {
-		const tabHeight = this.containerEl.getBoundingClientRect().height;
+		const tabRect = this.containerEl.getBoundingClientRect();
+		const tabHeight = tabRect.height;
 
 		const headingEntries = Array.from(this.iconHeadings.entries());
 		for (let i = 0; i < headingEntries.length; i++) {
 			const top = headingEntries[i][1].settingEl.getBoundingClientRect().top;
 			const bottom = headingEntries[i + 1]?.[1].settingEl.getBoundingClientRect().top
 				?? this.contentEl.getBoundingClientRect().bottom;
-			const isVisible = top <= tabHeight * 0.85 && bottom >= tabHeight * 0.2 + this.headerContainerEl.clientHeight;
+			const isVisible = top <= tabRect.top + tabHeight * 0.85
+				&& bottom >= tabRect.top + tabHeight * 0.2 + this.headerContainerEl.clientHeight;
 			const id = headingEntries[i][0];
 			this.headerEls.get(id)?.toggleClass('is-active', isVisible);
 		}
@@ -1633,16 +1640,16 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 		this.headerContainerEl = this.containerEl.createDiv({ cls: 'header-container', prepend: true });
 		InstallerVersionModal.openIfNecessary(this.plugin);
 		this.plugin.checkDeprecatedSettings();
-		for (const eventType of ['wheel', 'touchmove'] as const) {
-			this.component.registerDomEvent(this.containerEl, eventType,
-				debounce(() => this.updateHeaderElClass(), 100), { passive: true });
-		}
+		this.component.registerDomEvent(this.containerEl, 'scroll',
+			() => this.updateHeaderElClass(), { passive: true });
 	}
 
 	private finishDisplay() {
 		const component = this.component;
 		Promise.all(this.promises).then(() => {
 			if (this.component !== component || !this.contentEl.isConnected) return;
+			// The native settings renderer replaces the container children after rendering rows.
+			this.containerEl.prepend(this.headerContainerEl);
 			for (const updateLabel of this.linkLabels) updateLabel();
 			this.updateHeaderElClass();
 		}).catch(this.reportError);
@@ -1956,12 +1963,53 @@ export class PDFPlusSettingTab extends PluginSettingTab {
 
 
 		this.addHeading('Viewer options', 'viewer-option', 'lucide-monitor');
-		this.addDropdownSetting('pdfColorScheme', { light: 'Light', dark: 'Dark', system: 'System' }, () => {
+		this.addDropdownSetting('pdfColorScheme', { system: 'Automatic (Obsidian)', light: 'Light', dark: 'Dark' }, () => {
 			this.plugin.loadStyle();
-			this.plugin.trigger('adapt-to-theme-change', { adapt: this.plugin.settings.pdfColorScheme !== 'light' });
 		})
 			.setName('PDF color scheme')
-			.setDesc('Light keeps the original PDF colors. Dark inverts them. System follows your operating system’s appearance. Applies immediately and overrides the toolbar’s "Adapt to theme" option; PDF files are not modified.');
+			.setDesc('Automatic follows Obsidian’s active light or dark mode. Choose a reading theme for each mode below. Overrides the toolbar’s “Adapt to theme” option; PDF files are not modified.');
+		this.addSetting()
+			.setName('PDF themes')
+			.setDesc('Palettes from Tinted Theming (Base16). Select a light and a dark theme. Text and vector colors follow the palette; photos and scans keep their original colors.')
+			.setClass('pdf-plus-theme-setting')
+			.then((setting) => {
+				const grid = setting.controlEl.createDiv('pdf-plus-theme-grid');
+				const buttons: { button: HTMLButtonElement, key: 'pdfLightTheme' | 'pdfDarkTheme', id: PDFTheme }[] = [];
+				const update = () => {
+					for (const { button, key, id } of buttons) {
+						button.setAttribute('aria-pressed', String(this.plugin.settings[key] === id));
+					}
+				};
+				for (const [id, theme] of Object.entries(PDF_THEMES)) {
+					const card = grid.createDiv('pdf-plus-theme-card');
+					card.createDiv({ cls: 'pdf-plus-theme-name', text: theme.name });
+					const variants = card.createDiv('pdf-plus-theme-variants');
+					for (const mode of ['light', 'dark'] as const) {
+						const palette = (theme as PDFReadingTheme)[mode];
+						if (!palette) continue;
+						const key = mode === 'light' ? 'pdfLightTheme' : 'pdfDarkTheme';
+						const button = variants.createEl('button', { cls: 'pdf-plus-theme-choice', attr: { type: 'button', 'aria-label': `${theme.name} — ${mode} theme` } });
+						const preview = button.createDiv('pdf-plus-theme-preview');
+						preview.style.backgroundColor = palette.background;
+						preview.style.color = palette.foreground;
+						preview.createSpan({ text: 'Aa', cls: 'pdf-plus-theme-sample' });
+						preview.createDiv('pdf-plus-theme-lines');
+						const accents = preview.createDiv('pdf-plus-theme-accents');
+						for (const color of palette.accents) accents.createSpan().style.backgroundColor = color;
+						const label = button.createSpan('pdf-plus-theme-label');
+						setIcon(label.createSpan(), mode === 'light' ? 'sun' : 'moon');
+						label.createSpan({ text: mode === 'light' ? 'Light' : 'Dark' });
+						buttons.push({ button, key, id: id as PDFTheme });
+						button.addEventListener('click', this.handleAsync(async () => {
+							this.plugin.settings[key] = id as PDFTheme;
+							update();
+							await this.plugin.saveSettings();
+							this.plugin.loadStyle();
+						}));
+					}
+				}
+				update();
+			});
 		this.addSetting('defaultZoomValue')
 			.setName('Default zoom level')
 			.setDesc('This option will be ignored in PDF embeds.')

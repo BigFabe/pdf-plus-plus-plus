@@ -97,7 +97,7 @@ export class PDFCroppedEmbed extends Component implements Embed {
             return await this.lib.pdfPageToImageDataUrl(page, {
                 type: 'image/png',
                 cropRect: this.rect,
-                renderParams: this.lib.getOptionalRenderParameters(),
+                renderParams: this.lib.getOptionalRenderParameters(this.containerEl.ownerDocument),
             });
         } finally {
             await doc.destroy();

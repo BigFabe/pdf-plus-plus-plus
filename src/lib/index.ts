@@ -4,6 +4,7 @@ import { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { EncryptedPDFError, PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef } from '@cantoo/pdf-lib';
 
 import PDFPlus from 'main';
+import { PDF_THEMES, PDFReadingTheme, resolvePDFTheme, themePDFContext } from 'pdf-themes';
 import { ColorPalette, ColorPaletteState } from 'color-palette';
 import { copyLinkLib } from './copy-link';
 import { PDFSelectionLib } from './pdf-selection';
@@ -971,7 +972,7 @@ export class PDFPlusLib {
 
         const transform = [outputScale, 0, 0, outputScale, 0, 0];
 
-        await page.render({ canvas, canvasContext, transform, viewport, ...renderParams }).promise;
+        await page.render(this.themePDFRenderParameters({ canvas, canvasContext, transform, viewport, ...renderParams })).promise;
 
         return canvas;
     }
@@ -1029,12 +1030,32 @@ export class PDFPlusLib {
 
     isPDFDark(doc: Document = activeDocument): boolean {
         const scheme = this.plugin.settings.pdfColorScheme;
-        return scheme === 'dark' || (scheme === 'system' && !!doc.defaultView?.matchMedia('(prefers-color-scheme: dark)').matches);
+        return scheme === 'dark' || (scheme === 'system' && doc.body.classList.contains('theme-dark'));
+    }
+
+    getPDFPalette(doc: Document = activeDocument) {
+        const mode = this.isPDFDark(doc) ? 'dark' : 'light';
+        const id = resolvePDFTheme(mode === 'dark' ? this.plugin.settings.pdfDarkTheme : this.plugin.settings.pdfLightTheme, mode);
+        return id === 'classic' ? null : (PDF_THEMES[id] as PDFReadingTheme)[mode]!;
+    }
+
+    getPDFBackground(doc: Document = activeDocument): string | null {
+        return this.getPDFPalette(doc)?.background ?? (this.isPDFDark(doc) ? '#202020' : null);
     }
 
     getOptionalRenderParameters(doc: Document = activeDocument): OptionalRenderParameters {
-        return this.plugin.settings.rectFollowAdaptToTheme && this.isPDFDark(doc)
-            ? { background: '#202020', invert: true } : {};
+        return this.plugin.settings.rectFollowAdaptToTheme
+            ? { background: this.getPDFBackground(doc) ?? undefined, invert: !this.getPDFPalette(doc) && this.isPDFDark(doc) } : {};
+    }
+
+    themePDFRenderParameters(params: Parameters<PDFPageProxy['render']>[0] & { invert?: boolean }) {
+        const context = params.canvasContext;
+        if (!context) return params;
+        const palette = this.getPDFPalette(context.canvas.ownerDocument);
+        // Only viewer/crop renders explicitly requesting this palette participate.
+        // Image exports and unrelated PDF.js consumers retain their original colors.
+        if (!palette || params.background !== palette.background) return params;
+        return { ...params, background: '#ffffff', invert: false, canvasContext: themePDFContext(context, palette) };
     }
 
     getSelectedText(textContentItems: TextContentItem[], beginIndex: number, beginOffset: number, endIndex: number, endOffset: number) {

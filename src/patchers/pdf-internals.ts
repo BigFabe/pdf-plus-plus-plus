@@ -1,6 +1,6 @@
 import { Component, MarkdownRenderer, Notice, TFile, debounce, setIcon, setTooltip, Keymap, Menu, Platform, requireApiVersion, apiVersion } from 'obsidian';
 import { around } from 'monkey-around';
-import { PDFDocumentProxy } from 'pdfjs-dist';
+import { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 
 import PDFPlus from 'main';
 import { PDFAnnotationDeleteModal, PDFAnnotationEditModal } from 'modals';
@@ -57,6 +57,7 @@ export const patchPDFInternals = async (plugin: PDFPlus, pdfViewerComponent: PDF
                 patchObsidianViewer(plugin, child.pdfViewer);
 
                 patchAppOptions(plugin);
+                patchDarkPDFColors(plugin);
 
                 plugin.patchStatus.pdfInternals = true;
 
@@ -74,6 +75,25 @@ export const patchPDFInternals = async (plugin: PDFPlus, pdfViewerComponent: PDF
         });
     });
 };
+
+function patchDarkPDFColors(plugin: PDFPlus) {
+    const util = window.pdfjsLib.Util as typeof window.pdfjsLib.Util & {
+        invertHexColor(color: string): string;
+    };
+    plugin.register(around(util, {
+        invertHexColor(old) {
+            return function (this: typeof util, color: string) {
+                const inverted = old.call(this, color);
+                const red = parseInt(inverted.slice(1, 3), 16);
+                const green = parseInt(inverted.slice(3, 5), 16);
+                const blue = parseInt(inverted.slice(5, 7), 16);
+                // Hue-preserving inversion leaves dark blue PDF links unreadable.
+                return blue > red * 1.5 && blue > green * 1.5 && red < 128 && green < 128
+                    ? '#809fff' : inverted;
+            };
+        }
+    }));
+}
 
 function onPDFInternalsPatchSuccess(plugin: PDFPlus) {
     const { lib } = plugin;
@@ -180,10 +200,11 @@ const patchPDFViewerChild = (plugin: PDFPlus, child: PDFViewerChild) => {
                 const container = viewer?.dom?.pdfContainerEl;
                 if (!container || !viewer.pdfViewer) return;
                 const dark = lib.isPDFDark(container.ownerDocument);
-                const background = dark ? '#202020' : null;
+                const background = lib.getPDFBackground(container.ownerDocument);
+                const invert = dark && !lib.getPDFPalette(container.ownerDocument);
                 container.toggleClass('mod-themed', dark);
-                if (viewer.pageBackground !== background || viewer.pageInvert !== dark) {
-                    viewer.setBackground(background, dark);
+                if (viewer.pageBackground !== background || viewer.pageInvert !== invert) {
+                    viewer.setBackground(background, invert);
                 }
             };
         },
@@ -1229,6 +1250,7 @@ const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
     // participate; other PDF.js consumers keep their original behavior.
     const pageLabels = new WeakMap<PDFDocumentProxy, Promise<string[] | null> | null>();
     let pageLabelsPatched = false;
+    const themedPages = new WeakSet<PDFPageProxy>();
     // What this prototype actually is will change depending on the Obsidian version.
     // 
     // In Obsidian v1.7.7 or earlier, `pdfViewer` is an instance of the `ObsidianViewer` (which is a class).
@@ -1266,6 +1288,22 @@ const patchObsidianViewer = (plugin: PDFPlus, pdfViewer: ObsidianViewer) => {
                 const [doc] = args;
                 if (!pageLabelsPatched) {
                     plugin.register(around(Object.getPrototypeOf(doc) as PDFDocumentProxy, {
+                        getPage(original) {
+                            return async function (this: PDFDocumentProxy, ...args: Parameters<PDFDocumentProxy['getPage']>) {
+                                const page = await original.apply(this, args);
+                                if (pageLabels.has(this) && !themedPages.has(page)) {
+                                    themedPages.add(page);
+                                    plugin.register(around(page, {
+                                        render(render) {
+                                            return function (this: PDFPageProxy, params: Parameters<PDFPageProxy['render']>[0]) {
+                                                return render.call(this, plugin.lib.themePDFRenderParameters(params));
+                                            };
+                                        },
+                                    }));
+                                }
+                                return page;
+                            };
+                        },
                         getPageLabels(original) {
                             return function (this: PDFDocumentProxy) {
                                 if (!pageLabels.has(this)) return original.call(this);

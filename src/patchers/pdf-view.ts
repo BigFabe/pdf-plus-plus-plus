@@ -64,6 +64,22 @@ export const patchPDFView = (plugin: PDFPlus): boolean => {
             }
         }));
 
+        const searchReplaceCommand = plugin.app.commands.commands['editor:open-search-replace'];
+        if (searchReplaceCommand?.checkCallback) {
+            plugin.register(around(searchReplaceCommand, {
+                checkCallback(old) {
+                    return function (this: typeof searchReplaceCommand, checking: boolean) {
+                        const view = plugin.app.workspace.activeLeaf?.view;
+                        if (view?.getViewType() === 'pdf') {
+                            if (!checking) (view as PDFView).showSearch();
+                            return true;
+                        }
+                        return old?.call(this, checking);
+                    };
+                }
+            }));
+        }
+
         plugin.patchStatus.pdfView = true;
 
         // @ts-ignore

@@ -1,3 +1,4 @@
+import { resolvePDFTheme } from 'pdf-themes';
 import { Constructor, EventRef, Events, FileSystemAdapter, Keymap, Menu, Notice, ObsidianProtocolData, PaneType, Platform, Plugin, SettingTab, TFile, addIcon, apiVersion, loadPdfJs, requireApiVersion } from 'obsidian';
 import * as pdflib from '@cantoo/pdf-lib';
 
@@ -216,6 +217,8 @@ export default class PDFPlus extends Plugin {
 			throw new Error('PDF++: Invalid saved settings. Refusing to overwrite them with defaults.');
 		}
 		this.settings = Object.assign(this.getDefaultSettings(), stored);
+		this.settings.pdfLightTheme = resolvePDFTheme(this.settings.pdfLightTheme, 'light');
+		this.settings.pdfDarkTheme = resolvePDFTheme(this.settings.pdfDarkTheme, 'dark');
 		// Older releases enabled background requests by default, without explicit consent.
 		if (!this.settings.updateCheckConsent) this.settings.autoCheckForUpdates = false;
 

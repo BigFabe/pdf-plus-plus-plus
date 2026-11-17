@@ -60,6 +60,11 @@ export class HighlightGeometryLib extends PDFPlusLibSubmodule {
     }
 
     computeHighlightRectForItem(item: TextContentItem, textDiv: HTMLElement, index: number, beginIndex: number, beginOffset: number, endIndex: number, endOffset: number): Rect | null {
+        // Selection offsets count UTF-16 code units, while PDF glyphs can contain
+        // several of them (for example the ligatures "fi" and "ffi").
+        if (item.chars?.some(char => char.c.length > 1)) {
+            item = { ...item, chars: item.chars.flatMap(char => char.c.split('').map(c => ({ ...char, c }))) };
+        }
         // If the item has the `chars` property filled, use it to get the bounding rectangle of each character in the item.
         if (item.chars && item.chars.length >= item.str.length) {
             return this.computeHighlightRectForItemFromChars(item as PropRequired<TextContentItem, 'chars'>, index, beginIndex, beginOffset, endIndex, endOffset);
